@@ -83,6 +83,65 @@ class FfmpegFrameRendererTest {
     }
 
     @Test
+    fun `buildPipeFfmpegCommand without audio produces rawvideo input args`() {
+        val renderer = FfmpegFrameRenderer(renderMode = RenderMode.Pipe)
+        val composition = Composition(1080, 1920, 300, 30)
+        val command = renderer.buildPipeFfmpegCommand(
+            ffmpeg = "ffmpeg",
+            composition = composition,
+            outputPath = "/tmp/out.mp4",
+            audioTracks = emptyList(),
+        )
+
+        // rawvideo input from pipe
+        assertTrue(command.contains("-f"))
+        assertTrue(command.contains("rawvideo"))
+        assertTrue(command.contains("-pix_fmt"))
+        assertTrue(command.contains("bgra"))
+        assertTrue(command.contains("-s"))
+        assertTrue(command.contains("1080x1920"))
+        assertTrue(command.contains("pipe:0"))
+        // No filter_complex without audio
+        assertTrue(!command.contains("-filter_complex"))
+    }
+
+    @Test
+    fun `buildPipeFfmpegCommand with audio includes filter_complex`() {
+        val renderer = FfmpegFrameRenderer(renderMode = RenderMode.Pipe)
+        val composition = Composition(1080, 1920, 300, 30)
+        val tracks = listOf(
+            AudioTrack(file = "/audio/hook.wav", startFrame = 0),
+            AudioTrack(file = "/audio/demo.wav", startFrame = 90),
+        )
+        val command = renderer.buildPipeFfmpegCommand(
+            ffmpeg = "ffmpeg",
+            composition = composition,
+            outputPath = "/tmp/out.mp4",
+            audioTracks = tracks,
+        )
+
+        // rawvideo pipe input
+        assertTrue(command.contains("pipe:0"))
+        assertTrue(command.contains("rawvideo"))
+
+        // Audio inputs
+        assertTrue(command.contains("/audio/hook.wav"))
+        assertTrue(command.contains("/audio/demo.wav"))
+
+        // filter_complex
+        val filterIndex = command.indexOf("-filter_complex")
+        assertTrue(filterIndex >= 0)
+        val filter = command[filterIndex + 1]
+        assertTrue(filter.contains("adelay=0|0"))
+        assertTrue(filter.contains("adelay=3000|3000"))
+        assertTrue(filter.contains("amix=inputs=2"))
+
+        // Mapping
+        assertTrue(command.contains("0:v"))
+        assertTrue(command.contains("[aout]"))
+    }
+
+    @Test
     fun `renders composition to mp4 file`() {
         val ffmpegAvailable = try {
             ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0

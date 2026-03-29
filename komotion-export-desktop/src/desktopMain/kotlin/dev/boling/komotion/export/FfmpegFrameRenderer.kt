@@ -21,6 +21,8 @@ class FfmpegFrameRenderer(
     val ffmpegPath: String? = null,
     val crf: Int = 18,
     val preset: FfmpegPreset = FfmpegPreset.Medium,
+    val renderMode: RenderMode = RenderMode.Pipe,
+    val workerCount: Int = defaultWorkerCount(),
 ) : FrameRenderer {
 
     override suspend fun render(
@@ -178,4 +180,58 @@ class FfmpegFrameRenderer(
 
         return args
     }
+
+    internal fun buildPipeFfmpegCommand(
+        ffmpeg: String,
+        composition: Composition,
+        outputPath: String,
+        audioTracks: List<AudioTrack>,
+    ): List<String> {
+        val args = mutableListOf(
+            ffmpeg, "-y",
+            "-f", "rawvideo",
+            "-pix_fmt", "bgra",
+            "-s", "${composition.width}x${composition.height}",
+            "-r", composition.fps.toString(),
+            "-i", "pipe:0",
+        )
+
+        // Add each audio file as an input
+        for (track in audioTracks) {
+            args += listOf("-i", track.file)
+        }
+
+        if (audioTracks.isNotEmpty()) {
+            val filterParts = mutableListOf<String>()
+            val mixInputs = mutableListOf<String>()
+
+            for ((index, track) in audioTracks.withIndex()) {
+                val inputIndex = index + 1
+                val delayMs = track.startFrame * 1000L / composition.fps
+                val label = "a$index"
+                filterParts += "[$inputIndex:a]adelay=$delayMs|$delayMs[$label]"
+                mixInputs += "[$label]"
+            }
+
+            val mixFilter = "${mixInputs.joinToString("")}amix=inputs=${audioTracks.size}:duration=longest:dropout_transition=0:normalize=0[aout]"
+            val filterComplex = (filterParts + mixFilter).joinToString(";")
+
+            args += listOf("-filter_complex", filterComplex)
+            args += listOf("-map", "0:v", "-map", "[aout]")
+        }
+
+        args += listOf(
+            "-vcodec", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-crf", crf.toString(),
+            "-preset", preset.toFfmpegArg(),
+        )
+
+        args += File(outputPath).absolutePath
+
+        return args
+    }
 }
+
+private fun defaultWorkerCount(): Int =
+    (Runtime.getRuntime().availableProcessors() - 1).coerceIn(2, 8)
