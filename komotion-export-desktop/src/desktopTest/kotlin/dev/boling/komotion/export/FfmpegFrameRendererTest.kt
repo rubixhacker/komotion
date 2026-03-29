@@ -142,7 +142,7 @@ class FfmpegFrameRendererTest {
     }
 
     @Test
-    fun `renders composition to mp4 file`() {
+    fun `renders composition to mp4 with default settings`() {
         val ffmpegAvailable = try {
             ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
         } catch (e: Exception) { false }

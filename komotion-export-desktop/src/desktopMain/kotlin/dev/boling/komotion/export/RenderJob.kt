@@ -21,8 +21,8 @@ class RenderJob internal constructor(
     private val job: Job,
 ) {
     /**
-     * Cancels the render. The render coroutine's finally block deletes the
-     * temp PNG directory — no partial frames are left on disk.
+     * Cancels the render. Worker coroutines and the FFmpeg process are
+     * torn down cleanly. In PngSequence mode, the temp directory is deleted.
      */
     fun cancel() = job.cancel()
 }
