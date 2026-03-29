@@ -48,6 +48,19 @@ class OffscreenRenderer(private val composition: Composition) : AutoCloseable {
         return image.encodeToData(EncodedImageFormat.PNG)!!.bytes
     }
 
+    /**
+     * Renders [content] at [frame] and returns raw BGRA pixel bytes.
+     * Skips PNG encoding — faster than [renderFrame] for piped output.
+     */
+    fun renderFrameRaw(frame: Int, content: @Composable () -> Unit): ByteArray {
+        setRenderMode(true)
+        currentContent = content
+        frameState.value = frame
+        val nanoTime = frame * 1_000_000_000L / composition.fps
+        val image = scene.render(nanoTime)
+        return image.peekPixels()!!.buffer.bytes
+    }
+
     override fun close() {
         setRenderMode(false)
         scene.close()

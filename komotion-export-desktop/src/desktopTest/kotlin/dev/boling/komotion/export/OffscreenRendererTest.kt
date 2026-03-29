@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import dev.boling.komotion.core.Composition
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class OffscreenRendererTest {
@@ -27,5 +28,18 @@ class OffscreenRendererTest {
         assertTrue(pngBytes[1] == 0x50.toByte()) // 'P'
         assertTrue(pngBytes[2] == 0x4E.toByte()) // 'N'
         assertTrue(pngBytes[3] == 0x47.toByte()) // 'G'
+    }
+
+    @Test
+    fun `renderFrameRaw returns BGRA bytes with correct size`() = runBlocking {
+        val composition = Composition(width = 100, height = 100, durationInFrames = 1, fps = 30)
+        val content: @Composable () -> Unit = {
+            Box(Modifier.fillMaxSize().background(Color.Red))
+        }
+        val renderer = OffscreenRenderer(composition)
+        val rawBytes = renderer.use { it.renderFrameRaw(frame = 0, content = content) }
+        // BGRA = 4 bytes per pixel
+        val expectedSize = 100 * 100 * 4
+        assertEquals(expectedSize, rawBytes.size, message = "Raw BGRA bytes should be width * height * 4")
     }
 }
