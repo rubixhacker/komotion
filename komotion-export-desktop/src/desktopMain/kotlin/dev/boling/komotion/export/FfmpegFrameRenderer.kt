@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.nio.file.Files
-import java.util.TreeMap
 
 enum class FfmpegPreset {
     UltraFast, Fast, Medium, Slow, VerySlow;
@@ -61,52 +60,39 @@ class FfmpegFrameRenderer(
 
         try {
             coroutineScope {
-                // Worker coroutines: each owns its own OffscreenRenderer
-                val workers = (0 until workerCount).map { workerId ->
-                    launch(Dispatchers.Default) {
-                        val renderer = OffscreenRenderer(composition)
-                        try {
-                            var frame = workerId
-                            while (frame < totalFrames) {
-                                val bytes = renderer.renderFrameRaw(frame, content)
-                                channel.send(Pair(frame, bytes))
-                                frame += workerCount
-                                yield()
-                            }
-                        } finally {
-                            renderer.close()
+                // Renderer runs on the calling coroutine's thread (typically Dispatchers.Main).
+                // ImageComposeScene (Skiko) requires a stable, consistent thread context; using
+                // a single renderer here avoids multi-scene GL state conflicts that occur when
+                // multiple OffscreenRenderer instances are created across different thread pools.
+                val renderJob = launch {
+                    val renderer = OffscreenRenderer(composition)
+                    try {
+                        for (frame in 0 until totalFrames) {
+                            val bytes = renderer.renderFrameRaw(frame, content)
+                            channel.send(Pair(frame, bytes))
+                            yield()
                         }
+                    } finally {
+                        renderer.close()
                     }
                 }
 
-                // Writer coroutine: reorders frames and pipes to FFmpeg
+                // Writer coroutine: pipes frames to FFmpeg in order
                 val writer = launch(Dispatchers.IO) {
-                    val reorderBuffer = TreeMap<Int, ByteArray>()
-                    var nextFrame = 0
                     val outputStream = process.outputStream
 
                     try {
                         for ((frameNum, bytes) in channel) {
-                            reorderBuffer[frameNum] = bytes
-                            while (reorderBuffer.containsKey(nextFrame)) {
-                                outputStream.write(reorderBuffer.remove(nextFrame)!!)
-                                onProgress(nextFrame + 1)
-                                nextFrame++
-                            }
-                        }
-                        // Flush any remaining frames after channel closes
-                        while (reorderBuffer.isNotEmpty()) {
-                            val entry = reorderBuffer.pollFirstEntry()
-                            outputStream.write(entry.value)
-                            onProgress(entry.key + 1)
+                            outputStream.write(bytes)
+                            onProgress(frameNum + 1)
                         }
                     } finally {
                         outputStream.close()
                     }
                 }
 
-                // Wait for all workers to finish, then close the channel
-                workers.forEach { it.join() }
+                // Wait for renderer to finish, then close the channel
+                renderJob.join()
                 channel.close()
 
                 // Wait for writer to drain

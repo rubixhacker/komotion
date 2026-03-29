@@ -161,7 +161,7 @@ class FfmpegFrameRendererTest {
 
         runBlocking {
             withContext(Dispatchers.Main) {
-                val renderer = FfmpegFrameRenderer()
+                val renderer = FfmpegFrameRenderer(renderMode = RenderMode.PngSequence)
                 renderer.render(
                     composition = composition,
                     outputPath = outputFile.absolutePath,
@@ -172,5 +172,113 @@ class FfmpegFrameRendererTest {
 
         assertTrue(outputFile.exists(), "MP4 file should exist")
         assertTrue(outputFile.length() > 0, "MP4 file should not be empty")
+    }
+
+    @Test
+    fun `renders composition to mp4 via pipe mode`() {
+        val ffmpegAvailable = try {
+            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
+        } catch (e: Exception) { false }
+        if (!ffmpegAvailable) {
+            println("Skipping: FFmpeg not found on PATH")
+            return
+        }
+
+        val outputFile = File.createTempFile("komotion-pipe-test-", ".mp4")
+        outputFile.deleteOnExit()
+
+        val composition = Composition(width = 320, height = 240, durationInFrames = 10, fps = 30)
+        val content: @Composable () -> Unit = {
+            Box(Modifier.fillMaxSize().background(Color.Blue))
+        }
+
+        runBlocking {
+            withContext(Dispatchers.Main) {
+                val renderer = FfmpegFrameRenderer(renderMode = RenderMode.Pipe, workerCount = 2)
+                renderer.render(
+                    composition = composition,
+                    outputPath = outputFile.absolutePath,
+                    content = content,
+                )
+            }
+        }
+
+        assertTrue(outputFile.exists(), "MP4 file should exist")
+        assertTrue(outputFile.length() > 0, "MP4 file should not be empty")
+    }
+
+    @Test
+    fun `renders composition to mp4 via PngSequence mode`() {
+        val ffmpegAvailable = try {
+            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
+        } catch (e: Exception) { false }
+        if (!ffmpegAvailable) {
+            println("Skipping: FFmpeg not found on PATH")
+            return
+        }
+
+        val outputFile = File.createTempFile("komotion-png-test-", ".mp4")
+        outputFile.deleteOnExit()
+
+        val composition = Composition(width = 320, height = 240, durationInFrames = 10, fps = 30)
+        val content: @Composable () -> Unit = {
+            Box(Modifier.fillMaxSize().background(Color.Green))
+        }
+
+        runBlocking {
+            withContext(Dispatchers.Main) {
+                val renderer = FfmpegFrameRenderer(renderMode = RenderMode.PngSequence)
+                renderer.render(
+                    composition = composition,
+                    outputPath = outputFile.absolutePath,
+                    content = content,
+                )
+            }
+        }
+
+        assertTrue(outputFile.exists(), "MP4 file should exist")
+        assertTrue(outputFile.length() > 0, "MP4 file should not be empty")
+    }
+
+    @Test
+    fun `pipe mode reports correct progress`() {
+        val ffmpegAvailable = try {
+            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
+        } catch (e: Exception) { false }
+        if (!ffmpegAvailable) {
+            println("Skipping: FFmpeg not found on PATH")
+            return
+        }
+
+        val outputFile = File.createTempFile("komotion-progress-test-", ".mp4")
+        outputFile.deleteOnExit()
+
+        val composition = Composition(width = 320, height = 240, durationInFrames = 10, fps = 30)
+        val content: @Composable () -> Unit = {
+            Box(Modifier.fillMaxSize().background(Color.Red))
+        }
+
+        val progressValues = mutableListOf<Int>()
+
+        runBlocking {
+            withContext(Dispatchers.Main) {
+                val renderer = FfmpegFrameRenderer(renderMode = RenderMode.Pipe, workerCount = 2)
+                renderer.render(
+                    composition = composition,
+                    outputPath = outputFile.absolutePath,
+                    content = content,
+                    onProgress = { progressValues.add(it) },
+                )
+            }
+        }
+
+        // Should have reported progress for all 10 frames
+        assertEquals(10, progressValues.size, "Should report progress for each frame")
+        // Last progress value should equal total frames
+        assertEquals(10, progressValues.last(), "Final progress should equal total frames")
+        // Progress should be monotonically increasing
+        for (i in 1 until progressValues.size) {
+            assertTrue(progressValues[i] > progressValues[i - 1], "Progress should be monotonically increasing")
+        }
     }
 }
