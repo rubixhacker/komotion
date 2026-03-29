@@ -159,7 +159,7 @@ class FfmpegFrameRenderer(
                 mixInputs += "[$label]"
             }
 
-            val mixFilter = "${mixInputs.joinToString("")}amix=inputs=${audioTracks.size}:duration=longest:dropout_transition=0[aout]"
+            val mixFilter = "${mixInputs.joinToString("")}amix=inputs=${audioTracks.size}:duration=longest:dropout_transition=0:normalize=0[aout]"
             val filterComplex = (filterParts + mixFilter).joinToString(";")
 
             args += listOf("-filter_complex", filterComplex)
