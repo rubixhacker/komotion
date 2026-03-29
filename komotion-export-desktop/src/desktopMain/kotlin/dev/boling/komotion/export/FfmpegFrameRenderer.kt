@@ -5,10 +5,12 @@ import dev.boling.komotion.core.AudioTrack
 import dev.boling.komotion.core.Composition
 import dev.boling.komotion.core.FrameRenderer
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.nio.file.Files
+import java.util.TreeMap
 
 enum class FfmpegPreset {
     UltraFast, Fast, Medium, Slow, VerySlow;
@@ -26,6 +28,106 @@ class FfmpegFrameRenderer(
 ) : FrameRenderer {
 
     override suspend fun render(
+        composition: Composition,
+        outputPath: String,
+        content: @Composable () -> Unit,
+        audioTracks: List<AudioTrack>,
+        onProgress: (framesRendered: Int) -> Unit,
+    ) {
+        when (renderMode) {
+            RenderMode.Pipe -> renderPiped(composition, outputPath, content, audioTracks, onProgress)
+            RenderMode.PngSequence -> renderPngSequence(composition, outputPath, content, audioTracks, onProgress)
+        }
+    }
+
+    private suspend fun renderPiped(
+        composition: Composition,
+        outputPath: String,
+        content: @Composable () -> Unit,
+        audioTracks: List<AudioTrack>,
+        onProgress: (framesRendered: Int) -> Unit,
+    ) {
+        val ffmpeg = resolveFfmpeg()
+        val command = buildPipeFfmpegCommand(ffmpeg, composition, outputPath, audioTracks)
+
+        val process = withContext(Dispatchers.IO) {
+            ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .start()
+        }
+
+        val totalFrames = composition.durationInFrames
+        val channel = Channel<Pair<Int, ByteArray>>(capacity = workerCount * 2)
+
+        try {
+            coroutineScope {
+                // Worker coroutines: each owns its own OffscreenRenderer
+                val workers = (0 until workerCount).map { workerId ->
+                    launch(Dispatchers.Default) {
+                        val renderer = OffscreenRenderer(composition)
+                        try {
+                            var frame = workerId
+                            while (frame < totalFrames) {
+                                val bytes = renderer.renderFrameRaw(frame, content)
+                                channel.send(Pair(frame, bytes))
+                                frame += workerCount
+                                yield()
+                            }
+                        } finally {
+                            renderer.close()
+                        }
+                    }
+                }
+
+                // Writer coroutine: reorders frames and pipes to FFmpeg
+                val writer = launch(Dispatchers.IO) {
+                    val reorderBuffer = TreeMap<Int, ByteArray>()
+                    var nextFrame = 0
+                    val outputStream = process.outputStream
+
+                    try {
+                        for ((frameNum, bytes) in channel) {
+                            reorderBuffer[frameNum] = bytes
+                            while (reorderBuffer.containsKey(nextFrame)) {
+                                outputStream.write(reorderBuffer.remove(nextFrame)!!)
+                                onProgress(nextFrame + 1)
+                                nextFrame++
+                            }
+                        }
+                        // Flush any remaining frames after channel closes
+                        while (reorderBuffer.isNotEmpty()) {
+                            val entry = reorderBuffer.pollFirstEntry()
+                            outputStream.write(entry.value)
+                            onProgress(entry.key + 1)
+                        }
+                    } finally {
+                        outputStream.close()
+                    }
+                }
+
+                // Wait for all workers to finish, then close the channel
+                workers.forEach { it.join() }
+                channel.close()
+
+                // Wait for writer to drain
+                writer.join()
+            }
+
+            // Wait for FFmpeg to finish
+            val exitCode = withContext(Dispatchers.IO) { process.waitFor() }
+            if (exitCode != 0) {
+                val output = withContext(Dispatchers.IO) {
+                    process.inputStream.bufferedReader().readText()
+                }
+                throw IllegalStateException("FFmpeg failed (exit $exitCode):\n$output")
+            }
+        } catch (e: Throwable) {
+            withContext(Dispatchers.IO) { process.destroyForcibly() }
+            throw e
+        }
+    }
+
+    private suspend fun renderPngSequence(
         composition: Composition,
         outputPath: String,
         content: @Composable () -> Unit,
