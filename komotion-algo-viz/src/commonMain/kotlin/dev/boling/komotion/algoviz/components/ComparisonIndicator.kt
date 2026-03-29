@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.boling.komotion.algoviz.theme.LocalAlgoVizTheme
+import dev.boling.komotion.theme.KomotionTheme
 
 enum class ComparisonOp(val symbol: String) {
     LessThan("<"),
@@ -26,24 +26,25 @@ fun ComparisonIndicator(
     operator: ComparisonOp,
     modifier: Modifier = Modifier,
 ) {
-    val theme = LocalAlgoVizTheme.current
+    val colors = KomotionTheme.colors
+    val typography = KomotionTheme.typography
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier,
     ) {
         BasicText(
             text = left,
-            style = TextStyle(color = theme.accent, fontSize = 18.sp, fontFamily = theme.fontFamily),
+            style = TextStyle(color = colors.accent, fontSize = 18.sp, fontFamily = typography.fontFamily),
         )
         Spacer(Modifier.width(8.dp))
         BasicText(
             text = operator.symbol,
-            style = TextStyle(color = theme.text, fontSize = 18.sp, fontFamily = theme.fontFamily),
+            style = TextStyle(color = colors.text, fontSize = 18.sp, fontFamily = typography.fontFamily),
         )
         Spacer(Modifier.width(8.dp))
         BasicText(
             text = right,
-            style = TextStyle(color = theme.accent2, fontSize = 18.sp, fontFamily = theme.fontFamily),
+            style = TextStyle(color = colors.accent2, fontSize = 18.sp, fontFamily = typography.fontFamily),
         )
     }
 }

@@ -16,7 +16,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import dev.boling.komotion.algoviz.state.*
-import dev.boling.komotion.algoviz.theme.LocalAlgoVizTheme
+import dev.boling.komotion.algoviz.theme.LocalAlgoVizSizing
+import dev.boling.komotion.theme.KomotionColors
+import dev.boling.komotion.theme.KomotionTheme
 
 /**
  * Renders a graph with nodes as circles and edges as lines.
@@ -27,12 +29,14 @@ fun GraphViz(
     state: GraphVizState,
     modifier: Modifier = Modifier,
 ) {
-    val theme = LocalAlgoVizTheme.current
+    val colors = KomotionTheme.colors
+    val sizing = LocalAlgoVizSizing.current
+    val typography = KomotionTheme.typography
     val textMeasurer = rememberTextMeasurer()
 
     Canvas(modifier = modifier.fillMaxSize()) {
-        val nodeRadiusPx = theme.nodeRadius.toPx()
-        val strokeWidthPx = theme.nodeStrokeWidth.toPx()
+        val nodeRadiusPx = sizing.nodeRadius.toPx()
+        val strokeWidthPx = sizing.nodeStrokeWidth.toPx()
 
         // Build node position lookup
         val nodePositions = state.nodes.associate { node ->
@@ -44,9 +48,9 @@ fun GraphViz(
             val fromPos = nodePositions[edge.from] ?: continue
             val toPos = nodePositions[edge.to] ?: continue
             val edgeHighlight = state.edgeStates[edge.id] ?: HighlightState.Default
-            val edgeColor = resolveNodeColor(edgeHighlight, theme)
+            val edgeColor = resolveNodeColor(edgeHighlight, colors)
             val edgeAlpha = if (edgeHighlight == HighlightState.Eliminated) {
-                theme.eliminatedOpacity
+                sizing.eliminatedOpacity
             } else {
                 1f
             }
@@ -69,10 +73,10 @@ fun GraphViz(
         for (node in state.nodes) {
             val pos = nodePositions[node.id] ?: continue
             val highlight = state.nodeStates[node.id] ?: HighlightState.Default
-            val nodeColor = resolveNodeColor(highlight, theme)
-            val fillColor = resolveNodeFill(highlight, theme)
+            val nodeColor = resolveNodeColor(highlight, colors)
+            val fillColor = resolveNodeFill(highlight, colors)
             val nodeAlpha = if (highlight == HighlightState.Eliminated) {
-                theme.eliminatedOpacity
+                sizing.eliminatedOpacity
             } else {
                 1f
             }
@@ -97,9 +101,9 @@ fun GraphViz(
             val textLayout = textMeasurer.measure(
                 text = node.label,
                 style = TextStyle(
-                    color = theme.text,
+                    color = colors.text,
                     fontSize = 14.sp,
-                    fontFamily = theme.fontFamily,
+                    fontFamily = typography.fontFamily,
                     textAlign = TextAlign.Center,
                 ),
             )
@@ -116,24 +120,24 @@ fun GraphViz(
 
 private fun resolveNodeColor(
     highlight: HighlightState,
-    theme: dev.boling.komotion.algoviz.theme.AlgoVizTheme,
+    colors: KomotionColors,
 ): Color = when (highlight) {
-    HighlightState.Default -> theme.muted
-    HighlightState.Active -> theme.accent
-    HighlightState.Comparing -> theme.accent2
-    HighlightState.Found -> theme.accent
-    HighlightState.Eliminated -> theme.muted
+    HighlightState.Default -> colors.muted
+    HighlightState.Active -> colors.accent
+    HighlightState.Comparing -> colors.accent2
+    HighlightState.Found -> colors.accent
+    HighlightState.Eliminated -> colors.muted
 }
 
 private fun resolveNodeFill(
     highlight: HighlightState,
-    theme: dev.boling.komotion.algoviz.theme.AlgoVizTheme,
+    colors: KomotionColors,
 ): Color = when (highlight) {
-    HighlightState.Default -> theme.surface
-    HighlightState.Active -> theme.accent.copy(alpha = 0.15f)
-    HighlightState.Comparing -> theme.accent2.copy(alpha = 0.15f)
-    HighlightState.Found -> theme.accent.copy(alpha = 0.3f)
-    HighlightState.Eliminated -> theme.surface
+    HighlightState.Default -> colors.surface
+    HighlightState.Active -> colors.accent.copy(alpha = 0.15f)
+    HighlightState.Comparing -> colors.accent2.copy(alpha = 0.15f)
+    HighlightState.Found -> colors.accent.copy(alpha = 0.3f)
+    HighlightState.Eliminated -> colors.surface
 }
 
 private fun DrawScope.drawArrowhead(

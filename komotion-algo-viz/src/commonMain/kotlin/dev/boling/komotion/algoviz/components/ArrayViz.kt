@@ -15,7 +15,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.boling.komotion.algoviz.state.*
-import dev.boling.komotion.algoviz.theme.LocalAlgoVizTheme
+import dev.boling.komotion.algoviz.theme.LocalAlgoVizSizing
+import dev.boling.komotion.theme.KomotionColors
+import dev.boling.komotion.theme.KomotionTheme
 
 /**
  * Renders an array as a horizontal row of cells with optional
@@ -26,7 +28,10 @@ fun ArrayViz(
     state: ArrayVizState,
     modifier: Modifier = Modifier,
 ) {
-    val theme = LocalAlgoVizTheme.current
+    val colors = KomotionTheme.colors
+    val sizing = LocalAlgoVizSizing.current
+    val typography = KomotionTheme.typography
+    val shapes = KomotionTheme.shapes
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -37,7 +42,7 @@ fun ArrayViz(
             state.elements.forEachIndexed { index, _ ->
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(theme.cellSize, 28.dp),
+                    modifier = Modifier.size(sizing.cellSize, 28.dp),
                 ) {
                     val pointer = state.pointers.find {
                         it.index == index && it.position == PointerPosition.Above
@@ -60,12 +65,12 @@ fun ArrayViz(
         Row(horizontalArrangement = Arrangement.Center) {
             state.elements.forEachIndexed { index, value ->
                 val highlight = state.highlights[index] ?: HighlightState.Default
-                val cellColors = resolveCellColors(highlight, theme)
+                val cellColors = resolveCellColors(highlight, colors)
 
                 // Swap offset: Dp * Int and Dp * Float are both supported in Compose
                 val offsetX = if (state.swappingIndices != null) {
                     val (a, b) = state.swappingIndices
-                    val distance = (theme.cellSize + 4.dp) * kotlin.math.abs(b - a)
+                    val distance = (sizing.cellSize + 4.dp) * kotlin.math.abs(b - a)
                     when (index) {
                         a -> distance * state.swapProgress
                         b -> -distance * state.swapProgress
@@ -78,23 +83,23 @@ fun ArrayViz(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(theme.cellSize)
+                        .size(sizing.cellSize)
                         .offset(x = offsetX)
                         .graphicsLayer {
                             alpha = if (highlight == HighlightState.Eliminated) {
-                                theme.eliminatedOpacity
+                                sizing.eliminatedOpacity
                             } else {
                                 1f
                             }
                         }
                         .background(
                             cellColors.background,
-                            RoundedCornerShape(theme.cellCornerRadius),
+                            shapes.medium,
                         )
                         .border(
-                            theme.cellBorderWidth,
+                            sizing.cellBorderWidth,
                             cellColors.border,
-                            RoundedCornerShape(theme.cellCornerRadius),
+                            shapes.medium,
                         ),
                 ) {
                     BasicText(
@@ -102,7 +107,7 @@ fun ArrayViz(
                         style = TextStyle(
                             color = cellColors.text,
                             fontSize = 18.sp,
-                            fontFamily = theme.fontFamily,
+                            fontFamily = typography.fontFamily,
                             textAlign = TextAlign.Center,
                         ),
                     )
@@ -118,7 +123,7 @@ fun ArrayViz(
             state.elements.forEachIndexed { index, _ ->
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(theme.cellSize, 28.dp),
+                    modifier = Modifier.size(sizing.cellSize, 28.dp),
                 ) {
                     val pointer = state.pointers.find {
                         it.index == index && it.position == PointerPosition.Below
@@ -147,31 +152,31 @@ private data class CellColors(
 
 private fun resolveCellColors(
     highlight: HighlightState,
-    theme: dev.boling.komotion.algoviz.theme.AlgoVizTheme,
+    colors: KomotionColors,
 ): CellColors = when (highlight) {
     HighlightState.Default -> CellColors(
-        background = theme.surface,
-        border = theme.muted,
-        text = theme.text,
+        background = colors.surface,
+        border = colors.muted,
+        text = colors.text,
     )
     HighlightState.Active -> CellColors(
-        background = theme.accent.copy(alpha = 0.15f),
-        border = theme.accent,
-        text = theme.accent,
+        background = colors.accent.copy(alpha = 0.15f),
+        border = colors.accent,
+        text = colors.accent,
     )
     HighlightState.Comparing -> CellColors(
-        background = theme.accent2.copy(alpha = 0.15f),
-        border = theme.accent2,
-        text = theme.accent2,
+        background = colors.accent2.copy(alpha = 0.15f),
+        border = colors.accent2,
+        text = colors.accent2,
     )
     HighlightState.Found -> CellColors(
-        background = theme.accent.copy(alpha = 0.3f),
-        border = theme.accent,
-        text = theme.text,
+        background = colors.accent.copy(alpha = 0.3f),
+        border = colors.accent,
+        text = colors.text,
     )
     HighlightState.Eliminated -> CellColors(
-        background = theme.surface,
-        border = theme.muted,
-        text = theme.muted,
+        background = colors.surface,
+        border = colors.muted,
+        text = colors.muted,
     )
 }

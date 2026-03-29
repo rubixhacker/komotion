@@ -14,7 +14,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.boling.komotion.algoviz.state.PointerPosition
-import dev.boling.komotion.algoviz.theme.LocalAlgoVizTheme
+import dev.boling.komotion.theme.KomotionTheme
 
 @Composable
 fun PointerMarker(
@@ -23,8 +23,9 @@ fun PointerMarker(
     color: Color = Color.Unspecified,
     modifier: Modifier = Modifier,
 ) {
-    val theme = LocalAlgoVizTheme.current
-    val resolvedColor = if (color == Color.Unspecified) theme.accent else color
+    val colors = KomotionTheme.colors
+    val typography = KomotionTheme.typography
+    val resolvedColor = if (color == Color.Unspecified) colors.accent else color
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -47,7 +48,7 @@ fun PointerMarker(
             style = TextStyle(
                 color = resolvedColor,
                 fontSize = 11.sp,
-                fontFamily = theme.fontFamily,
+                fontFamily = typography.fontFamily,
             ),
         )
 

@@ -5,7 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.sp
-import dev.boling.komotion.algoviz.theme.LocalAlgoVizTheme
+import dev.boling.komotion.theme.KomotionTheme
 
 @Composable
 fun StepLabel(
@@ -13,13 +13,14 @@ fun StepLabel(
     description: String,
     modifier: Modifier = Modifier,
 ) {
-    val theme = LocalAlgoVizTheme.current
+    val colors = KomotionTheme.colors
+    val typography = KomotionTheme.typography
     BasicText(
         text = "Step $step: $description",
         style = TextStyle(
-            color = theme.text,
+            color = colors.text,
             fontSize = 16.sp,
-            fontFamily = theme.fontFamily,
+            fontFamily = typography.fontFamily,
         ),
         modifier = modifier,
     )

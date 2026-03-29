@@ -3,7 +3,6 @@ package dev.boling.komotion.algoviz.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -15,14 +14,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.boling.komotion.algoviz.state.*
-import dev.boling.komotion.algoviz.theme.LocalAlgoVizTheme
+import dev.boling.komotion.algoviz.theme.LocalAlgoVizSizing
+import dev.boling.komotion.theme.KomotionColors
+import dev.boling.komotion.theme.KomotionTheme
 
 @Composable
 fun StackQueueViz(
     state: StackQueueVizState,
     modifier: Modifier = Modifier,
 ) {
-    val theme = LocalAlgoVizTheme.current
+    val sizing = LocalAlgoVizSizing.current
+    val shapes = KomotionTheme.shapes
 
     when (state.mode) {
         StackQueueMode.Stack -> {
@@ -36,7 +38,7 @@ fun StackQueueViz(
                         highlight = HighlightState.Active,
                         modifier = Modifier.graphicsLayer {
                             alpha = state.pushProgress
-                            translationY = -theme.cellSize.toPx() * (1f - state.pushProgress)
+                            translationY = -sizing.cellSize.toPx() * (1f - state.pushProgress)
                         },
                     )
                     Spacer(Modifier.height(4.dp))
@@ -52,7 +54,7 @@ fun StackQueueViz(
                         modifier = if (isPopping) {
                             Modifier.graphicsLayer {
                                 alpha = 1f - state.popProgress
-                                translationY = -theme.cellSize.toPx() * state.popProgress
+                                translationY = -sizing.cellSize.toPx() * state.popProgress
                             }
                         } else {
                             Modifier
@@ -80,7 +82,7 @@ fun StackQueueViz(
                         modifier = if (isPopping) {
                             Modifier.graphicsLayer {
                                 alpha = 1f - state.popProgress
-                                translationX = -theme.cellSize.toPx() * state.popProgress
+                                translationX = -sizing.cellSize.toPx() * state.popProgress
                             }
                         } else {
                             Modifier
@@ -98,7 +100,7 @@ fun StackQueueViz(
                         highlight = HighlightState.Active,
                         modifier = Modifier.graphicsLayer {
                             alpha = state.pushProgress
-                            translationX = theme.cellSize.toPx() * (1f - state.pushProgress)
+                            translationX = sizing.cellSize.toPx() * (1f - state.pushProgress)
                         },
                     )
                 }
@@ -113,29 +115,32 @@ private fun StackQueueCell(
     highlight: HighlightState,
     modifier: Modifier = Modifier,
 ) {
-    val theme = LocalAlgoVizTheme.current
-    val colors = resolveSQCellColors(highlight, theme)
+    val colors = KomotionTheme.colors
+    val sizing = LocalAlgoVizSizing.current
+    val typography = KomotionTheme.typography
+    val shapes = KomotionTheme.shapes
+    val cellColors = resolveSQCellColors(highlight, colors)
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(theme.cellSize)
+            .size(sizing.cellSize)
             .graphicsLayer {
                 alpha = if (highlight == HighlightState.Eliminated) {
-                    theme.eliminatedOpacity
+                    sizing.eliminatedOpacity
                 } else {
                     1f
                 }
             }
-            .background(colors.background, RoundedCornerShape(theme.cellCornerRadius))
-            .border(theme.cellBorderWidth, colors.border, RoundedCornerShape(theme.cellCornerRadius)),
+            .background(cellColors.background, shapes.medium)
+            .border(sizing.cellBorderWidth, cellColors.border, shapes.medium),
     ) {
         BasicText(
             text = value,
             style = TextStyle(
-                color = colors.text,
+                color = cellColors.text,
                 fontSize = 18.sp,
-                fontFamily = theme.fontFamily,
+                fontFamily = typography.fontFamily,
                 textAlign = TextAlign.Center,
             ),
         )
@@ -146,11 +151,11 @@ private data class SQCellColors(val background: Color, val border: Color, val te
 
 private fun resolveSQCellColors(
     highlight: HighlightState,
-    theme: dev.boling.komotion.algoviz.theme.AlgoVizTheme,
+    colors: KomotionColors,
 ): SQCellColors = when (highlight) {
-    HighlightState.Default -> SQCellColors(theme.surface, theme.muted, theme.text)
-    HighlightState.Active -> SQCellColors(theme.accent.copy(alpha = 0.15f), theme.accent, theme.accent)
-    HighlightState.Comparing -> SQCellColors(theme.accent2.copy(alpha = 0.15f), theme.accent2, theme.accent2)
-    HighlightState.Found -> SQCellColors(theme.accent.copy(alpha = 0.3f), theme.accent, theme.text)
-    HighlightState.Eliminated -> SQCellColors(theme.surface, theme.muted, theme.muted)
+    HighlightState.Default -> SQCellColors(colors.surface, colors.muted, colors.text)
+    HighlightState.Active -> SQCellColors(colors.accent.copy(alpha = 0.15f), colors.accent, colors.accent)
+    HighlightState.Comparing -> SQCellColors(colors.accent2.copy(alpha = 0.15f), colors.accent2, colors.accent2)
+    HighlightState.Found -> SQCellColors(colors.accent.copy(alpha = 0.3f), colors.accent, colors.text)
+    HighlightState.Eliminated -> SQCellColors(colors.surface, colors.muted, colors.muted)
 }
