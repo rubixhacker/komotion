@@ -77,6 +77,13 @@ class FfmpegFrameRenderer(
                     }
                 }
 
+                // Drain FFmpeg's stdout/stderr to prevent pipe buffer deadlock.
+                // With redirectErrorStream(true), all output goes to inputStream —
+                // if the buffer fills, FFmpeg blocks and waitFor() hangs.
+                val stdoutDrain = launch(Dispatchers.IO) {
+                    process.inputStream.bufferedReader().readText()
+                }
+
                 // Writer coroutine: pipes frames to FFmpeg in order
                 val writer = launch(Dispatchers.IO) {
                     val outputStream = process.outputStream
@@ -95,21 +102,23 @@ class FfmpegFrameRenderer(
                 renderJob.join()
                 channel.close()
 
-                // Wait for writer to drain
+                // Wait for writer to drain, then wait for FFmpeg stdout
                 writer.join()
+                stdoutDrain.join()
             }
 
             // Wait for FFmpeg to finish
             val exitCode = withContext(Dispatchers.IO) { process.waitFor() }
             if (exitCode != 0) {
-                val output = withContext(Dispatchers.IO) {
-                    process.inputStream.bufferedReader().readText()
-                }
-                throw IllegalStateException("FFmpeg failed (exit $exitCode):\n$output")
+                throw IllegalStateException("FFmpeg failed (exit $exitCode)")
             }
-        } catch (e: Throwable) {
-            withContext(Dispatchers.IO) { process.destroyForcibly() }
-            throw e
+        } finally {
+            withContext(Dispatchers.IO) {
+                process.inputStream.close()
+                process.outputStream.close()
+                process.errorStream.close()
+                process.destroyForcibly()
+            }
         }
     }
 

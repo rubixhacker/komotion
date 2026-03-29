@@ -281,4 +281,37 @@ class FfmpegFrameRendererTest {
             assertTrue(progressValues[i] > progressValues[i - 1], "Progress should be monotonically increasing")
         }
     }
+
+    @Test
+    fun `sequential pipe renders complete without hanging`() {
+        val ffmpegAvailable = try {
+            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
+        } catch (e: Exception) { false }
+        if (!ffmpegAvailable) {
+            println("Skipping: FFmpeg not found on PATH")
+            return
+        }
+
+        val composition = Composition(width = 320, height = 240, durationInFrames = 10, fps = 30)
+        val content: @Composable () -> Unit = {
+            Box(Modifier.fillMaxSize().background(Color.Blue))
+        }
+
+        runBlocking {
+            withContext(Dispatchers.Main) {
+                val renderer = FfmpegFrameRenderer(renderMode = RenderMode.Pipe, workerCount = 2)
+                repeat(3) { i ->
+                    val outputFile = File.createTempFile("komotion-seq-$i-", ".mp4")
+                    outputFile.deleteOnExit()
+                    renderer.render(
+                        composition = composition,
+                        outputPath = outputFile.absolutePath,
+                        content = content,
+                    )
+                    assertTrue(outputFile.exists(), "MP4 $i should exist")
+                    assertTrue(outputFile.length() > 0, "MP4 $i should not be empty")
+                }
+            }
+        }
+    }
 }
