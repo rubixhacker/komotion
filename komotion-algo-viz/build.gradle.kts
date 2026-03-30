@@ -61,6 +61,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":komotion-core"))
+            implementation(project(":komotion-theme"))
             implementation(compose.runtime)
             implementation(compose.ui)
             implementation(compose.foundation)
