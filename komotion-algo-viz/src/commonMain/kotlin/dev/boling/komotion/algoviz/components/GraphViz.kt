@@ -67,6 +67,43 @@ fun GraphViz(
             if (state.directed) {
                 drawArrowhead(fromPos, toPos, nodeRadiusPx, edgeColor, edgeAlpha)
             }
+
+            // Draw edge label at midpoint
+            if (edge.label != null) {
+                val midpoint = Offset(
+                    (fromPos.x + toPos.x) / 2f,
+                    (fromPos.y + toPos.y) / 2f,
+                )
+                val labelLayout = textMeasurer.measure(
+                    text = edge.label,
+                    style = TextStyle(
+                        color = edgeColor,
+                        fontSize = 12.sp,
+                        fontFamily = typography.fontFamily,
+                        textAlign = TextAlign.Center,
+                    ),
+                )
+                // Background pill behind label for readability
+                drawRoundRect(
+                    color = colors.surface,
+                    topLeft = Offset(
+                        midpoint.x - labelLayout.size.width / 2f - 4f,
+                        midpoint.y - labelLayout.size.height / 2f - 2f,
+                    ),
+                    size = androidx.compose.ui.geometry.Size(
+                        labelLayout.size.width + 8f,
+                        labelLayout.size.height + 4f,
+                    ),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f),
+                )
+                drawText(
+                    textLayoutResult = labelLayout,
+                    topLeft = Offset(
+                        midpoint.x - labelLayout.size.width / 2f,
+                        midpoint.y - labelLayout.size.height / 2f,
+                    ),
+                )
+            }
         }
 
         // Draw nodes

@@ -30,4 +30,16 @@ class GraphStateTest {
         val edge = GraphEdge(from = "A", to = "B")
         assertEquals("A->B", edge.id)
     }
+
+    @Test
+    fun `GraphEdge label defaults to null`() {
+        val edge = GraphEdge(from = "A", to = "B")
+        assertEquals(null, edge.label)
+    }
+
+    @Test
+    fun `GraphEdge label can be set for weighted edges`() {
+        val edge = GraphEdge(from = "A", to = "B", label = "5")
+        assertEquals("5", edge.label)
+    }
 }
