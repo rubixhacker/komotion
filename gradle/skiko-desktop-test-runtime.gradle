@@ -27,4 +27,20 @@ afterEvaluate {
             throw new GradleException("Unsupported OS for desktop UI tests: $os")
         }
     }
+    // Two environment accommodations for the desktopTest JVM:
+    //
+    // 1. Skiko creates a lock file in its data path (default: $user.home/.skiko)
+    //    when the AWT runtime initializes. In environments where the user home
+    //    directory is not writable (e.g. sandboxed CI), initialization fails with
+    //    "Could not initialize class org.jetbrains.skia.Surface". Point the data
+    //    path at a per-module build directory instead.
+    //
+    // 2. Desktop UI tests create offscreen Compose windows. In environments
+    //    without a display/window server (e.g. sandboxed CI), letting AWT open a
+    //    real window aborts the test JVM. Run headless so AWT uses an offscreen
+    //    window; this also works on machines that do have a display.
+    tasks.named("desktopTest", org.gradle.api.tasks.testing.Test) {
+        jvmArgs "-Dskiko.data.path=${buildDir}/skiko-data"
+        jvmArgs "-Djava.awt.headless=true"
+    }
 }
