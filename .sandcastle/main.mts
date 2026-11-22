@@ -573,8 +573,13 @@ function checkState(prNumber: number): "green" | "red" | "pending" {
 }
 
 /** Open factory pull requests (the sandcastle/issue-* branches). */
-function openFactoryPrs(): { number: number; headRefName: string; isDraft: boolean }[] {
-  const prs = ghJson<{ number: number; headRefName: string; isDraft: boolean }[]>([
+function openFactoryPrs(): {
+  number: number;
+  headRefName: string;
+  isDraft: boolean;
+  mergeable: string;
+}[] {
+  const prs = ghJson<{ number: number; headRefName: string; isDraft: boolean; mergeable: string }[]>([
     "pr",
     "list",
     "--repo",
@@ -582,7 +587,7 @@ function openFactoryPrs(): { number: number; headRefName: string; isDraft: boole
     "--state",
     "open",
     "--json",
-    "number,headRefName,isDraft",
+    "number,headRefName,isDraft,mergeable",
   ]);
   return prs.filter((pr) => pr.headRefName.startsWith("sandcastle/issue-"));
 }
@@ -615,13 +620,21 @@ function rebaseBranch(branch: string): boolean {
   // The branch name contains a slash (sandcastle/issue-N); the worktree
   // path must stay one directory level deep.
   const worktree = `${root}/.sandcastle/worktrees/rebase-${branch.replace("/", "-")}`;
+  // The runtime checkout has no git identity; take it from main's HEAD,
+  // which the factory commits under.
+  const identity = execFileSync("git", ["-C", root, "log", "-1", "--format=%an|%ae", "origin/main"], {
+    encoding: "utf8",
+  }).trim();
+  const [name, email] = identity.split("|");
+  const gitIn = (args: readonly string[]) =>
+    execFileSync("git", ["-C", worktree, "-c", `user.name=${name}`, "-c", `user.email=${email}`, ...args], {
+      encoding: "utf8",
+    });
   try {
     removeWorktreeHolding(branch);
     execFileSync("git", ["-C", root, "worktree", "add", worktree, branch], { encoding: "utf8" });
-    execFileSync("git", ["-C", worktree, "rebase", "origin/main"], { encoding: "utf8" });
-    execFileSync("git", ["-C", worktree, "push", "--force-with-lease", "origin", branch], {
-      encoding: "utf8",
-    });
+    gitIn(["rebase", "origin/main"]);
+    gitIn(["push", "--force-with-lease", "origin", branch]);
     return true;
   } catch {
     try {
@@ -665,18 +678,27 @@ function rebaseOpenPrs(): void {
 /** Merge every open factory pull request whose CI is green. */
 function mergeGreenPrs(): void {
   for (const pr of openFactoryPrs()) {
-    if (pr.isDraft) {
-      console.log(`  #${pr.number}: draft; waiting`);
-      continue;
-    }
-    const state = checkState(pr.number);
-    if (state === "green") {
-      gh(["pr", "merge", String(pr.number), "--squash", "--repo", config.GITHUB_REPO]);
-      console.log(`  #${pr.number}: merged (CI green)`);
-    } else if (state === "red") {
-      console.log(`  #${pr.number}: CI red; left for the next pass`);
-    } else {
-      console.log(`  #${pr.number}: CI pending; waiting`);
+    try {
+      if (pr.isDraft) {
+        console.log(`  #${pr.number}: draft; waiting`);
+        continue;
+      }
+      if (pr.mergeable === "CONFLICTING") {
+        console.log(`  #${pr.number}: merge conflicts; waiting for a rebase or a human`);
+        continue;
+      }
+      const state = checkState(pr.number);
+      if (state === "green") {
+        gh(["pr", "merge", String(pr.number), "--squash", "--repo", config.GITHUB_REPO]);
+        console.log(`  #${pr.number}: merged (CI green)`);
+      } else if (state === "red") {
+        console.log(`  #${pr.number}: CI red; left for the next pass`);
+      } else {
+        console.log(`  #${pr.number}: CI pending; waiting`);
+      }
+    } catch (error) {
+      // one unmergeable pull request must not stop the rest of the pass
+      console.error(`  #${pr.number}: merge failed: ${String(error)}`);
     }
   }
 }
