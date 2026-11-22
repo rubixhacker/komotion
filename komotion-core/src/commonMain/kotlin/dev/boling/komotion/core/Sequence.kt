@@ -58,10 +58,11 @@ fun Sequence(
     }
     val globalFrame = LocalFrame.current
     val windowFrame = globalFrame - from
-    // With loop the sequence stays mounted until the parent ends so the trimmed
-    // range can repeat; otherwise the window ends after durationInFrames / playbackRate.
+    // A null duration or loop keeps the sequence mounted until the parent ends;
+    // otherwise the window ends after durationInFrames / playbackRate parent frames.
+    val windowBounded = durationInFrames != null && !loop
     val inWindow = windowFrame >= 0 &&
-        (durationInFrames == null || loop || windowFrame * playbackRate < durationInFrames)
+        (!windowBounded || windowFrame * playbackRate < durationInFrames)
     if (!inWindow) {
         // Emit nothing — zero-size layout so parent reserves no space.
         Layout(content = {}) { _, _ -> layout(0, 0) {} }
