@@ -158,8 +158,8 @@ fun DemoSegment(videoPath: String) {
 
 ## Requirements
 
-- Kotlin 2.1.0+
-- Compose Multiplatform 1.6.11+
+- Kotlin 2.4.21+
+- Compose Multiplatform 1.12.2+
 - JVM target 17
 - FFmpeg on PATH (for MP4 export)
 
