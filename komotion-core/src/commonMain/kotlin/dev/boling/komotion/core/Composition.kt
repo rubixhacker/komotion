@@ -1,5 +1,6 @@
 package dev.boling.komotion.core
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 
 /**
@@ -17,6 +18,15 @@ data class Composition(
  * Defaults to 0. Always read-only from composition code.
  */
 val LocalFrame = compositionLocalOf { 0 }
+
+/**
+ * Reads the current frame number from [LocalFrame].
+ *
+ * This is the only way composition code should obtain the frame; pass the result
+ * to the pure [interpolate] family of functions.
+ */
+@Composable
+fun currentFrame(): Int = LocalFrame.current
 
 /**
  * The Composition describing the current animation context.
