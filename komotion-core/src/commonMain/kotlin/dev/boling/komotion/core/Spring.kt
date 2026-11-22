@@ -12,7 +12,7 @@ import kotlin.math.*
  * @property stiffness Spring constant. Higher = faster oscillation. Default: 100.0.
  * @property mass Mass of the object. Higher = more inertia. Default: 1.0.
  */
-class SpringConfig(
+data class SpringConfig(
     val damping: Float = 0.7f,
     val stiffness: Float = 100f,
     val mass: Float = 1f,
@@ -27,14 +27,7 @@ class SpringConfig(
  *
  * This is the Komotion equivalent of Remotion's `spring()`.
  */
-class SpringEasing(
-    val damping: Float = 0.7f,
-    val stiffness: Float = 100f,
-    val mass: Float = 1f,
-) : Easing {
-
-    val config: SpringConfig
-        get() = SpringConfig(damping, stiffness, mass)
+class SpringEasing(val config: SpringConfig) : Easing {
 
     override fun transform(fraction: Float): Float =
         springProgress(fraction.toDouble(), config).toFloat()
@@ -47,12 +40,12 @@ fun spring(
     damping: Float = 0.7f,
     stiffness: Float = 100f,
     mass: Float = 1f,
-): Easing = SpringEasing(damping, stiffness, mass)
+): Easing = SpringEasing(SpringConfig(damping, stiffness, mass))
 
 /**
  * Creates a [SpringEasing] from a [SpringConfig].
  */
-fun spring(config: SpringConfig): Easing = SpringEasing(config.damping, config.stiffness, config.mass)
+fun spring(config: SpringConfig): Easing = SpringEasing(config)
 
 /**
  * Returns the spring value at [frame]: a value starting at [from] and
@@ -103,13 +96,8 @@ fun springValue(
     // durationInFrames and optionally reversed.
     val fraction = (frame - delay).toDouble() / durationInFrames
     val progress = springProgress(if (reverse) 1.0 - fraction else fraction, config)
-    var value: Float = (from + (to - from) * progress).toFloat()
-    if (overshootClamping) {
-        val lo = minOf(from, to)
-        val hi = maxOf(from, to)
-        value = value.coerceIn(lo, hi)
-    }
-    return value
+    val raw = (from + (to - from) * progress).toFloat()
+    return if (overshootClamping) raw.coerceIn(minOf(from, to), maxOf(from, to)) else raw
 }
 
 /**
