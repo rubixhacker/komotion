@@ -65,7 +65,7 @@ class SpringTest {
 
     @Test
     fun `spring works with interpolate`() {
-        val result = interpolate(15, 0..30, 0f..100f, spring(damping = 0.7f))
+        val result = interpolate(15, 0..30, 0f..100f, options = InterpolateOptions(easing = listOf(spring(damping = 0.7f))))
         // At halfway with a bouncy spring, value should be past 50 (overshoot tendency)
         assertTrue(result > 40f, "Spring-eased midpoint should be significant, got $result")
     }

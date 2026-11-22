@@ -10,7 +10,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.boling.komotion.core.Sequence
-import dev.boling.komotion.core.animateFloatAsFrame
+import dev.boling.komotion.core.currentFrame
+import dev.boling.komotion.core.interpolate
 
 private data class Bar(val label: String, val value: Float, val color: Color, val startFrame: Int)
 
@@ -37,7 +38,8 @@ fun BarChart() {
             ) {
                 bars.forEach { bar ->
                     Sequence(from = bar.startFrame, durationInFrames = 60 - bar.startFrame) {
-                        val heightFraction = animateFloatAsFrame(0..20, 0f..bar.value)
+                        val frame = currentFrame()
+                        val heightFraction = interpolate(frame, 0..20, 0f..bar.value)
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(
                                 modifier = Modifier
