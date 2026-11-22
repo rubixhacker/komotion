@@ -1,0 +1,30 @@
+// Adds the Skiko AWT runtime for the host OS to this module's desktopTest source set.
+//
+// The Skiko AWT runtime is a host-native library: desktop UI tests only run on
+// the machine that builds them, so the runtime must match that machine. A fixed
+// platform (e.g. linux-x64) passes CI but crashes every desktop UI test on a
+// developer's Mac with "Could not initialize class org.jetbrains.skia.Surface".
+//
+// Usage: apply(from = rootProject.file("gradle/skiko-desktop-test-runtime.gradle"))
+
+afterEvaluate {
+    def kotlin = extensions.findByName("kotlin")
+    if (kotlin == null) {
+        throw new GradleException("skiko-desktop-test-runtime requires the Kotlin Multiplatform plugin")
+    }
+    kotlin.sourceSets.getByName("desktopTest").dependencies {
+        def os = System.getProperty("os.name").toLowerCase()
+        def arch = System.getProperty("os.arch").toLowerCase()
+        if (os.startsWith("linux")) {
+            implementation libs.skiko.awt.runtime.linux.x64
+        } else if (os.startsWith("mac") && arch == "aarch64") {
+            implementation libs.skiko.awt.runtime.macos.arm64
+        } else if (os.startsWith("mac")) {
+            implementation libs.skiko.awt.runtime.macos.x64
+        } else if (os.startsWith("windows")) {
+            implementation libs.skiko.awt.runtime.windows.x64
+        } else {
+            throw new GradleException("Unsupported OS for desktop UI tests: $os")
+        }
+    }
+}

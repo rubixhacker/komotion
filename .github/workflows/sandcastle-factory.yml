@@ -1,0 +1,36 @@
+name: Sandcastle Factory Dispatch
+
+# Wakes the local issue factory when GitHub state it reads changes, so it does
+# not wait for its next poll. The job only drops a marker file on the factory
+# host; the factory then reads current state itself, so no event payload is
+# trusted. The factory's timer and its in-pass sweep remain the fallback.
+on:
+  issues:
+    types: [labeled]
+  pull_request_target:
+    branches: [main]
+    types: [closed]
+  workflow_run:
+    workflows:
+      - CI
+    types: [completed]
+    branches:
+      - 'sandcastle/issue-*'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  enqueue:
+    if: >-
+      (github.event_name != 'issues' ||
+       github.event.label.name == 'ready-for-agent') &&
+      (github.event_name != 'pull_request_target' ||
+       (startsWith(github.event.pull_request.head.ref, 'sandcastle/issue-') &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: [self-hosted, sandcastle-dispatch]
+    timeout-minutes: 2
+    steps:
+      - name: Queue an event for the local issue factory
+        shell: bash
+        run: bash "${SANDCASTLE_RUNTIME_DIR:-$HOME/Workspace/komotion-factory}/scripts/ci/sandcastle-enqueue.sh" factory

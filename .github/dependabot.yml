@@ -1,0 +1,10 @@
+version: 2
+updates:
+  - package: gradle
+    directory: /
+    schedule:
+      interval: weekly
+  - package: github-actions
+    directory: /
+    schedule:
+      interval: weekly

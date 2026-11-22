@@ -1,0 +1,34 @@
+name: Sandcastle Dependabot Dispatch
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    workflows:
+      - CI
+    types: [completed]
+    # The main push trigger below already wakes reconciliation when main moves.
+    branches:
+      - 'dependabot/**'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  enqueue:
+    if: >-
+      (github.event_name != 'pull_request_target' ||
+       (github.event.pull_request.user.login == 'dependabot[bot]' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        !github.event.pull_request.draft)) &&
+      (github.event_name != 'workflow_run' ||
+       startsWith(github.event.workflow_run.head_branch, 'dependabot/'))
+    runs-on: [self-hosted, sandcastle-dispatch]
+    timeout-minutes: 2
+    steps:
+      - name: Queue an event for the local Sandcastle service
+        shell: bash
+        run: bash "${SANDCASTLE_RUNTIME_DIR:-$HOME/Workspace/komotion-factory}/scripts/ci/sandcastle-enqueue.sh" dependabot
