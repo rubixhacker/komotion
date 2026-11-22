@@ -62,6 +62,13 @@ fi
 [ -f "$template" ] || { echo "missing $template" >&2; exit 1; }
 mkdir -p "$agents" "$runtime/.sandcastle/logs"
 
+# The factory pushes ticket branches to github.com over HTTPS. Wire the gh
+# token into git as a URL-scoped credential helper so those pushes
+# authenticate; without it, delivery fails with "could not read Username".
+if command -v gh >/dev/null 2>&1; then
+  gh auth setup-git
+fi
+
 for i in "${!labels[@]}"; do
   lane=${labels[$i]}
   label=$(label_for "$lane")
