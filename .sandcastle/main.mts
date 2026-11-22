@@ -64,6 +64,18 @@ const config = z
 
 const agentModel = config.SANDCASTLE_MODEL;
 
+/**
+ * The env a sandboxed agent run needs to find the model: the vLLM provider
+ * config (the sandbox has no host OpenCode config to fall back on) and the
+ * endpoint that serves the model.
+ */
+function agentRunEnv(): Record<string, string> {
+  return {
+    OPENCODE_CONFIG_CONTENT: readFileSync(resolve(root, ".sandcastle/opencode.json"), "utf8"),
+    VLLM_BASE_URL: config.VLLM_BASE_URL,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // GitHub on the host. The sandbox never sees a GitHub credential: seatbelt
 // hides the host's gh login, and the factory reads and writes GitHub itself.
@@ -252,7 +264,10 @@ async function main(): Promise<void> {
     sandbox: factorySandbox(),
     name: "planner",
     maxIterations: 1,
-    agent: sandcastle.opencode(agentModel, { captureSessions: false }),
+    agent: sandcastle.opencode(agentModel, {
+      captureSessions: false,
+      env: agentRunEnv(),
+    }),
     promptFile: "./.sandcastle/plan-prompt.md",
     promptArgs: {
       ISSUES: JSON.stringify(eligible, null, 2),
@@ -354,8 +369,7 @@ async function workTicket(
 
   const agentEnv = {
     OPENCODE_CONFIG_DIR: `${sandbox.worktreePath}/.sandcastle/agent`,
-    OPENCODE_CONFIG_CONTENT: readFileSync(resolve(root, ".sandcastle/opencode.json"), "utf8"),
-    VLLM_BASE_URL: config.VLLM_BASE_URL,
+    ...agentRunEnv(),
     OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: String(30 * 60_000),
   };
   const budgetSignal = AbortSignal.timeout(config.SANDCASTLE_TICKET_BUDGET_MINUTES * 60_000);

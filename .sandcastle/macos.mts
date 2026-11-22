@@ -50,7 +50,13 @@ function xcodeDeveloperDir(): string | null {
 /** Java 21, the JDK the Gradle wrapper uses. */
 function javaHome(): string | null {
   try {
-    return execFileSync("/usr/libexec/java_home", ["-v", "21"], { encoding: "utf8" }).trim();
+    // The lookup prints "Unable to locate a Java Runtime" on stderr when no
+    // JDK is registered with the system; capture it so it does not leak into
+    // the lane output.
+    return execFileSync("/usr/libexec/java_home", ["-v", "21"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
   } catch {
     // No JDK 21 registered with the system: Homebrew's openjdk@21 is the JDK 21.
   }
