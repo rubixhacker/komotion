@@ -8,6 +8,7 @@ plugins {
 }
 
 apply(from = rootProject.file("gradle/publish.gradle.kts"))
+apply(from = rootProject.file("gradle/skiko-desktop-test-runtime.gradle"))
 
 mavenPublishing {
     configure(KotlinMultiplatform(javadocJar = com.vanniktech.maven.publish.JavadocJar.Empty()))
