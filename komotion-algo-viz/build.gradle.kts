@@ -10,6 +10,7 @@ plugins {
 }
 
 apply(from = rootProject.file("gradle/publish.gradle.kts"))
+apply(from = rootProject.file("gradle/skiko-desktop-test-runtime.gradle"))
 
 mavenPublishing {
     configure(KotlinMultiplatform(javadocJar = com.vanniktech.maven.publish.JavadocJar.Empty()))
@@ -69,11 +70,8 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
-        val desktopTest by getting {
-            dependencies {
-                implementation(libs.skiko.awt.runtime.linux.x64)
-            }
-        }
+        // The desktopTest Skiko AWT runtime is added by
+        // gradle/skiko-desktop-test-runtime.gradle.
     }
 }
 
