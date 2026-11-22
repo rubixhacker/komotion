@@ -444,7 +444,18 @@ async function workTicket(
     }
   }
 
-  await sandbox.close();
+  const closed = await sandbox.close();
+  // close() preserves the worktree when it is dirty, and the onWorktreeReady
+  // hook always dirties it (it copies .sandcastle/agent and the issue context
+  // into it). A preserved worktree is never worth keeping: the commits live
+  // on the shared branch ref, and the worktree keeps the branch checked out,
+  // which blocks any later worktree for the same branch.
+  if (closed.preservedWorktreePath) {
+    execFileSync("git", ["-C", root, "worktree", "remove", "--force", closed.preservedWorktreePath], {
+      encoding: "utf8",
+      stdio: "ignore",
+    });
+  }
 
   if (failure === null && commits.length > 0) {
     try {
@@ -577,13 +588,35 @@ function openFactoryPrs(): { number: number; headRefName: string; isDraft: boole
 }
 
 /**
+ * Remove a worktree that has `branch` checked out (a preserved ticket
+ * worktree), so the branch can be checked out again.
+ */
+function removeWorktreeHolding(branch: string): void {
+  const lines = execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], {
+    encoding: "utf8",
+  }).split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === `branch ${branch}` && i > 0) {
+      execFileSync("git", ["-C", root, "worktree", "remove", "--force", lines[i - 1].slice("worktree ".length)], {
+        encoding: "utf8",
+        stdio: "ignore",
+      });
+      break;
+    }
+  }
+}
+
+/**
  * Rebase an open factory branch onto the latest main in a throwaway
  * worktree, and force-push the result. Returns false (and leaves the branch
  * as-is) when the rebase conflicts, so a human can resolve it.
  */
 function rebaseBranch(branch: string): boolean {
-  const worktree = `${root}/.sandcastle/worktrees/rebase-${branch}`;
+  // The branch name contains a slash (sandcastle/issue-N); the worktree
+  // path must stay one directory level deep.
+  const worktree = `${root}/.sandcastle/worktrees/rebase-${branch.replace("/", "-")}`;
   try {
+    removeWorktreeHolding(branch);
     execFileSync("git", ["-C", root, "worktree", "add", worktree, branch], { encoding: "utf8" });
     execFileSync("git", ["-C", worktree, "rebase", "origin/main"], { encoding: "utf8" });
     execFileSync("git", ["-C", worktree, "push", "--force-with-lease", "origin", branch], {
@@ -591,16 +624,24 @@ function rebaseBranch(branch: string): boolean {
     });
     return true;
   } catch {
-    execFileSync("git", ["-C", worktree, "rebase", "--abort"], {
-      encoding: "utf8",
-      stdio: "ignore",
-    });
+    try {
+      execFileSync("git", ["-C", worktree, "rebase", "--abort"], {
+        encoding: "utf8",
+        stdio: "ignore",
+      });
+    } catch {
+      // no rebase in progress (the worktree may not exist)
+    }
     return false;
   } finally {
-    execFileSync("git", ["-C", root, "worktree", "remove", "--force", worktree], {
-      encoding: "utf8",
-      stdio: "ignore",
-    });
+    try {
+      execFileSync("git", ["-C", root, "worktree", "remove", "--force", worktree], {
+        encoding: "utf8",
+        stdio: "ignore",
+      });
+    } catch {
+      // the worktree may not exist if the add failed
+    }
   }
 }
 
@@ -608,10 +649,15 @@ function rebaseBranch(branch: string): boolean {
 function rebaseOpenPrs(): void {
   execFileSync("git", ["-C", root, "fetch", "origin"], { encoding: "utf8" });
   for (const pr of openFactoryPrs()) {
-    if (rebaseBranch(pr.headRefName)) {
-      console.log(`  #${pr.number}: rebased onto main`);
-    } else {
-      console.log(`  #${pr.number}: rebase conflicted; left for a human`);
+    try {
+      if (rebaseBranch(pr.headRefName)) {
+        console.log(`  #${pr.number}: rebased onto main`);
+      } else {
+        console.log(`  #${pr.number}: rebase conflicted; left for a human`);
+      }
+    } catch (error) {
+      // one bad branch must not take the rest of the pass down
+      console.error(`  #${pr.number}: rebase failed: ${String(error)}`);
     }
   }
 }
