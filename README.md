@@ -135,6 +135,30 @@ val frame = currentFrame()
 val scale = interpolate(frame, 0..20, 0.8f..1f, options = InterpolateOptions(easing = listOf(spring(damping = 0.5f))))
 ```
 
+### Spring Values
+
+`springValue` returns the spring's value at a frame directly, without keyframes:
+
+```kotlin
+val config = SpringConfig(damping = 0.3f) // bouncy
+val position = springValue(
+    frame = currentFrame(),
+    fps = 30,
+    config = config,
+    from = 0f,
+    to = 300f,
+    durationInFrames = 40,
+    delay = 5,               // hold `from` for 5 frames
+    reverse = false,         // true plays the curve backwards (from `to` to `from`)
+    overshootClamping = false // true clamps the value to the from→to interval
+)
+
+// How many frames a spring takes to settle at a given fps:
+val settleFrames = measureSpring(config, fps = 30, threshold = 0.01f)
+```
+
+`springValue` and `spring` share one solver, so the value function and the easing curve never disagree.
+
 ### Audio Tracks
 
 Declare audio files to be mixed into the exported MP4:
