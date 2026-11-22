@@ -87,6 +87,30 @@ Sequence(from = 30, durationInFrames = 30) {
 }
 ```
 
+`durationInFrames` is optional — when omitted, the sequence runs until the parent ends. The other timing options:
+
+```kotlin
+Sequence(
+    from = 0,
+    durationInFrames = 30,
+    trimBefore = 5,        // child frame starts at -5; the window start is unchanged
+    playbackRate = 2.0,   // child plays at 2x speed; the window is 15 parent frames long
+    freeze = null,        // pin the child to one frame, e.g. freeze = 15
+    loop = false,         // repeat the trimmed range until the parent ends
+    name = "intro",       // carried via LocalSequenceName for timeline display
+) {
+    // ...
+}
+```
+
+`Sequence` adds no layout wrapper by default; use `AbsoluteFill` for overlay content that should fill the parent:
+
+```kotlin
+AbsoluteFill {
+    Text("Overlay")
+}
+```
+
 ### Interpolation
 
 Pure functions — deterministic, no Compose context needed. Every animated value is
