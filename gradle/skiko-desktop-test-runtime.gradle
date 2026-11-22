@@ -39,8 +39,9 @@ afterEvaluate {
     //    without a display/window server (e.g. sandboxed CI), letting AWT open a
     //    real window aborts the test JVM. Run headless so AWT uses an offscreen
     //    window; this also works on machines that do have a display.
+    def skikoDataPath = layout.buildDirectory.dir("skiko-data").get()
     tasks.named("desktopTest", org.gradle.api.tasks.testing.Test) {
-        jvmArgs "-Dskiko.data.path=${buildDir}/skiko-data"
+        jvmArgs "-Dskiko.data.path=$skikoDataPath"
         jvmArgs "-Djava.awt.headless=true"
     }
 }
