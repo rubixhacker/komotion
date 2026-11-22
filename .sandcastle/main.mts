@@ -406,9 +406,11 @@ async function workTicket(
         maxIterations: 1,
         agent: sandcastle.opencode(agentModel, { captureSessions: false, env: agentEnv }),
         promptFile: "./.sandcastle/review-prompt.md",
+        // TARGET_BRANCH is a built-in prompt argument (the host's current
+        // branch, which the runtime keeps at origin/main), so it cannot be
+        // passed here.
         promptArgs: {
           BRANCH: branch,
-          TARGET_BRANCH: "origin/main",
         },
         signal: budgetSignal,
       });
