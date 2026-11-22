@@ -25,8 +25,12 @@ file keeps a new pass from starting while another is running.
 2. **Implement + review** — per ticket, in its own git worktree and Seatbelt
    sandbox: an implementer agent makes the change, then a reviewer agent
    refines it. Both run OpenCode with the local vLLM model.
-3. **Gate** — the orchestrator (not the agent) runs `./gradlew desktopTest`
-   on the worktree. Only a green branch is delivered.
+3. **Gate** — the orchestrator (not the agent) runs `./gradlew desktopTest
+   compileAllTargets` on the worktree: the desktop tests, plus a compile of
+   the main sources of every target in every module (iOS, Android, wasmJs,
+   desktop), so a change that breaks a non-desktop target is not delivered.
+   The repository's CI runs the same command. Only a green branch is
+   delivered.
 4. **Deliver** — the host pushes the branch and opens a pull request that
    says `Closes #<n>`, so the issue closes when a human merges the PR.
 
@@ -83,6 +87,14 @@ The other knobs are environment variables with defaults in each entry point
 (`SANDCASTLE_MAX_ISSUES`, `SANDCASTLE_PARALLELISM`,
 `SANDCASTLE_TICKET_BUDGET_MINUTES`, `SANDCASTLE_TICKET_STRIKES`,
 `GATE_COMMAND`, `GATE_MINUTES`, `TRIAGE_BATCH`).
+
+The gate compiles every target in every module, so the host needs the
+toolchains those targets build with: Xcode (iOS), and the Android SDK
+(Android — the command-line tools alone are not enough):
+
+```bash
+sdkmanager --install "platforms;35" "build-tools;35.0.0"
+```
 
 ## Logs
 
