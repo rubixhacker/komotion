@@ -3,15 +3,14 @@ package dev.boling.komotion.core
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
-import kotlin.test.ExperimentalKotlinTestApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-@OptIn(ExperimentalKotlinTestApi::class)
 class InterpolateMultiKeyframeTest {
 
     // --- Multi-segment ---
@@ -279,16 +278,14 @@ class InterpolateMultiKeyframeTest {
     }
 }
 
-@OptIn(ExperimentalKotlinTestApi::class)
 private fun assertEquals(expected: Float, actual: Float, tolerance: Float) {
-    assertTrue(abs(expected - actual) <= tolerance) {
+    assert(abs(expected - actual) <= tolerance) {
         "Expected $expected but was $actual (tolerance $tolerance)"
     }
 }
 
-@OptIn(ExperimentalKotlinTestApi::class)
-private fun assertDpClose(expected: androidx.compose.ui.unit.Dp, actual: androidx.compose.ui.unit.Dp) {
-    assertTrue(abs(expected.value - actual.value) <= 1f) {
+private fun assertDpClose(expected: Dp, actual: Dp) {
+    assert(abs(expected.value - actual.value) <= 1f) {
         "Expected $expected but was $actual"
     }
 }
