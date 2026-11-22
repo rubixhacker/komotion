@@ -15,12 +15,12 @@
 //   npx tsx .sandcastle/main.mts --check  # verify the environment, then exit
 
 import * as sandcastle from "@ai-hero/sandcastle";
-import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
 import { z } from "zod";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { acquireLock } from "./lock.mts";
+import { factorySandbox } from "./macos.mts";
 
 const root = resolve(process.cwd());
 try {
@@ -249,7 +249,7 @@ async function main(): Promise<void> {
   // Plan: pick the issues that can be worked in parallel right now.
   // -------------------------------------------------------------------------
   const plan = await sandcastle.run({
-    sandbox: seatbelt(),
+    sandbox: factorySandbox(),
     name: "planner",
     maxIterations: 1,
     agent: sandcastle.opencode(agentModel, { captureSessions: false }),
@@ -333,7 +333,7 @@ async function workTicket(
     sandbox = await sandcastle.createSandbox({
       branch,
       baseBranch: "origin/main",
-      sandbox: seatbelt(),
+      sandbox: factorySandbox(),
       cwd: root,
       hooks: {
         host: {

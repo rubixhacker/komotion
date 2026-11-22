@@ -11,11 +11,11 @@
 //   npx tsx .sandcastle/triage.mts --check  # verify the environment, then exit
 
 import * as sandcastle from "@ai-hero/sandcastle";
-import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
 import { z } from "zod";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { acquireLock } from "./lock.mts";
+import { factorySandbox } from "./macos.mts";
 
 const root = resolve(process.cwd());
 try {
@@ -137,7 +137,7 @@ async function main(): Promise<void> {
   }
 
   const result = await sandcastle.run({
-    sandbox: seatbelt(),
+    sandbox: factorySandbox(),
     name: "triage",
     maxIterations: 1,
     agent: sandcastle.opencode(config.SANDCASTLE_MODEL, { captureSessions: false }),
