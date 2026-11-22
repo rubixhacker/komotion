@@ -26,7 +26,8 @@ Think [Remotion](https://www.remotion.dev/) — but for Kotlin and Compose.
 // Define your animation as a composable
 @Composable
 fun HelloVideo() {
-    val opacity = animateFloatAsFrame(0..30, 0f..1f, easing = spring())
+    val frame = currentFrame()
+    val opacity = interpolate(frame, 0..30, 0f..1f, options = InterpolateOptions(easing = listOf(spring())))
 
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         Text(
@@ -61,10 +62,10 @@ suspend fun export() {
 
 ### Frame & Composition
 
-Every composable in a Komotion composition reads the current frame via `LocalFrame`:
+Every composable in a Komotion composition reads the current frame with `currentFrame()`:
 
 ```kotlin
-val frame = LocalFrame.current              // 0-based frame index
+val frame = currentFrame()                  // 0-based frame index
 val comp = LocalComposition.current         // width, height, fps, durationInFrames
 ```
 
@@ -74,20 +75,22 @@ Time-window a section of your composition. Children see `LocalFrame` offset to 0
 
 ```kotlin
 Sequence(from = 0, durationInFrames = 30) {
-    // LocalFrame.current here is 0..29
-    val opacity = animateFloatAsFrame(0..30, 0f..1f)
+    // currentFrame() here is 0..29
+    val frame = currentFrame()
+    val opacity = interpolate(frame, 0..30, 0f..1f)
     Text("Intro", modifier = Modifier.graphicsLayer(alpha = opacity))
 }
 
 Sequence(from = 30, durationInFrames = 30) {
-    // LocalFrame.current here is 0..29
+    // currentFrame() here is 0..29
     Text("Main content")
 }
 ```
 
 ### Interpolation
 
-Pure functions — deterministic, no Compose context needed:
+Pure functions — deterministic, no Compose context needed. Every animated value is
+`currentFrame()` piped through one of these:
 
 ```kotlin
 interpolate(frame, 0..30, 0f..1f)                           // Float
@@ -96,16 +99,26 @@ interpolateColor(frame, 0..30, Color.Black, Color.White)     // Color
 interpolateDp(frame, 0..30, 0.dp, 16.dp)                    // Dp
 ```
 
-Composable wrappers that read `LocalFrame` automatically:
+The keyframe form accepts lists of equal length (at least one element), so a single
+call can drive a multi-segment animation:
 
 ```kotlin
-val opacity = animateFloatAsFrame(0..30, 0f..1f)
-val count = animateIntAsFrame(0..60, 0..100)
-val bg = animateColorAsFrame(0..30, Color.Black, Color.White)
-val padding = animateDpAsFrame(0..30, 0.dp, 16.dp)
+interpolate(frame, listOf(0, 30, 60), listOf(0f, 1f, 0f))
 ```
 
-All accept an `easing` parameter.
+Behavior is controlled with `InterpolateOptions`:
+
+```kotlin
+InterpolateOptions(
+    extrapolateLeft = ExtrapolateMode.clamp,   // clamp | extend | wrap | identity
+    extrapolateRight = ExtrapolateMode.clamp,  // clamp is the default
+    posterize = 1,                            // quantize the input to a step (e.g. 3 = 10 fps at 30 fps)
+    easing = listOf(LinearEasing),            // one easing, or one per segment
+)
+```
+
+`interpolateFloats(frame, listOf(0, 20), listOf(floatArrayOf(0f, 0f), floatArrayOf(100f, 50f)))`
+interpolates every component of a `FloatArray` independently.
 
 ### Spring Easing
 
@@ -118,7 +131,8 @@ spring(damping = 1.0f)                // Critically damped, no overshoot
 spring(damping = 2.0f, stiffness = 50f)  // Overdamped, sluggish
 
 // Use with any interpolation
-val scale = animateFloatAsFrame(0..20, 0.8f..1f, easing = spring(damping = 0.5f))
+val frame = currentFrame()
+val scale = interpolate(frame, 0..20, 0.8f..1f, options = InterpolateOptions(easing = listOf(spring(damping = 0.5f))))
 ```
 
 ### Audio Tracks
@@ -145,7 +159,7 @@ Embed pre-rendered MP4 clips in your composition (desktop export only):
 ```kotlin
 @Composable
 fun DemoSegment(videoPath: String) {
-    val frame = LocalFrame.current
+    val frame = currentFrame()
     val videoFrame = rememberVideoFrame(videoFile = videoPath, frameIndex = frame)
 
     Box(Modifier.fillMaxSize()) {
