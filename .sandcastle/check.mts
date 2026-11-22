@@ -12,7 +12,10 @@ import { execFileSync } from "node:child_process";
  * prompt itself. A promptArgs key that collides with one of these makes
  * the run fail before the agent starts.
  */
-export const RESERVED_PROMPT_ARGS: readonly string[] = ["SOURCE_BRANCH", "TARGET_BRANCH"];
+export const RESERVED_PROMPT_ARGS: readonly string[] = [
+  "SOURCE_BRANCH",
+  "TARGET_BRANCH",
+];
 
 /**
  * One failure per prompt argument that collides with a built-in prompt

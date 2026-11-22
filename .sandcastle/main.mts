@@ -228,13 +228,19 @@ function check(): void {
     failures.push(`gh cannot read ${config.GITHUB_REPO}`);
   }
   failures.push(...ghCommandFailures(GH_COMMANDS));
-  const dummyIssue: QueueIssue = { number: 0, title: "", body: "", labels: [], comments: [] };
+  const dummyIssue: QueueIssue = {
+    number: 0,
+    title: "",
+    body: "",
+    labels: [],
+    comments: [],
+  };
   failures.push(
     ...promptArgFailures([
       ["planner", plannerPromptArgs([])],
       ["implementer", implementerPromptArgs(dummyIssue, "", "")],
-      ["reviewer", reviewerPromptArgs("")]],
-    ),
+      ["reviewer", reviewerPromptArgs("")],
+    ]),
   );
   const model = agentModel.split("/")[1] ?? agentModel;
   try {
