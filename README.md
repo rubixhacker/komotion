@@ -111,8 +111,8 @@ Behavior is controlled with `InterpolateOptions`:
 ```kotlin
 InterpolateOptions(
     extrapolateLeft = ExtrapolateMode.clamp,   // clamp | extend | wrap | identity
-    extrapolateRight = ExtrapolateMode.clamp,  // clamp is the default
-    posterize = 1,                            // quantize the input to a step (e.g. 3 = 10 fps at 30 fps)
+    extrapolateRight = ExtrapolateMode.clamp, // clamp is the default
+    posterize = 3,                            // quantize the input to a step (e.g. 3 = 10 fps at 30 fps)
     easing = listOf(LinearEasing),            // one easing, or one per segment
 )
 ```

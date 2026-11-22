@@ -1,25 +1,24 @@
 package dev.boling.komotion.core
 
-import androidx.compose.animation.core.LinearEasing
 import kotlin.test.Test
 
 class InterpolateTest {
 
     @Test
     fun `in-range interpolates linearly`() {
-        val result = interpolate(15, 0..30, 0f..1f, options = InterpolateOptions(easing = listOf(LinearEasing)))
+        val result = interpolate(15, 0..30, 0f..1f)
         assertEquals(0.5f, result, absoluteTolerance = 0.001f)
     }
 
     @Test
     fun `at range start returns output start`() {
-        val result = interpolate(0, 0..30, 0f..1f, options = InterpolateOptions(easing = listOf(LinearEasing)))
+        val result = interpolate(0, 0..30, 0f..1f)
         assertEquals(0f, result, absoluteTolerance = 0.001f)
     }
 
     @Test
     fun `at range end returns output end`() {
-        val result = interpolate(30, 0..30, 0f..1f, options = InterpolateOptions(easing = listOf(LinearEasing)))
+        val result = interpolate(30, 0..30, 0f..1f)
         assertEquals(1f, result, absoluteTolerance = 0.001f)
     }
 
@@ -37,7 +36,7 @@ class InterpolateTest {
 
     @Test
     fun `works with non-zero output range`() {
-        val result = interpolate(10, 0..20, 100f..200f, options = InterpolateOptions(easing = listOf(LinearEasing)))
+        val result = interpolate(10, 0..20, 100f..200f)
         assertEquals(150f, result, absoluteTolerance = 0.001f)
     }
 }
