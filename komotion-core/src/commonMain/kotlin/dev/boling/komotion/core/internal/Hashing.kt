@@ -21,8 +21,8 @@ private const val FNV_PRIME: Long = 0x00000100000001B3L
  */
 internal fun fnv1a64(s: String): Long {
     var hash = FNV_OFFSET_BASIS
-    for (i in s.indices) {
-        val unit = s[i].code.toLong()
+    for (c in s) {
+        val unit = c.code.toLong()
         hash = (hash xor (unit and 0xFFL)) * FNV_PRIME
         hash = (hash xor ((unit shr 8) and 0xFFL)) * FNV_PRIME
     }
