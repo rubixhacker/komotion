@@ -31,7 +31,7 @@ kotlin {
             implementation(compose.ui)
             implementation(compose.material3)
         }
-        val desktopMain by getting {
+        getByName("desktopMain") {
             dependencies {
                 implementation(project(":komotion-export-desktop"))
                 implementation(compose.desktop.currentOs)

@@ -49,14 +49,14 @@ kotlin {
     }
 
     sourceSets {
-        val desktopMain by getting {
+        getByName("desktopMain") {
             dependencies {
                 implementation(project(":komotion-core"))
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
             }
         }
-        val desktopTest by getting {
+        getByName("desktopTest") {
             dependencies {
                 implementation(libs.kotlin.test)
                 implementation(libs.kotlinx.coroutines.swing)
