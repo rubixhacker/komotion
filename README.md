@@ -17,6 +17,8 @@ Think [Remotion](https://www.remotion.dev/) — but for Kotlin and Compose.
 | `komotion-core` | Android, iOS, Desktop, wasmJs | Core API: `Composition`, `Sequence`, `interpolate`, `spring`, `LocalFrame` |
 | `komotion-player` | Android, iOS, Desktop, wasmJs | Embedded player with play/pause, scrub, loop, and frame counter |
 | `komotion-export-desktop` | Desktop (JVM) | MP4 export via FFmpeg with audio mixing and video frame extraction |
+| `komotion-theme` | Android, iOS, Desktop, wasmJs | Shared design tokens: `KomotionTheme` with colors, typography and shapes |
+| `komotion-algo-viz` | Android, iOS, Desktop, wasmJs | Algorithm visualizations for arrays, graphs, trees, stacks and queues |
 
 ## Quick Start
 
@@ -167,17 +169,21 @@ fun DemoSegment(videoPath: String) {
 
 ### Gradle (Maven Central)
 
+The current published version is `0.4.1`.
+
 ```kotlin
 // build.gradle.kts
 commonMain.dependencies {
-    implementation("dev.boling.komotion:komotion-core:0.1.0")
-    implementation("dev.boling.komotion:komotion-player:0.1.0")
+    implementation("dev.boling.komotion:komotion-core:0.4.1")
+    implementation("dev.boling.komotion:komotion-player:0.4.1")
+    implementation("dev.boling.komotion:komotion-theme:0.4.1")
+    implementation("dev.boling.komotion:komotion-algo-viz:0.4.1")
 }
 
 // Desktop only
 val desktopMain by getting {
     dependencies {
-        implementation("dev.boling.komotion:komotion-export-desktop:0.1.0")
+        implementation("dev.boling.komotion:komotion-export-desktop:0.4.1")
     }
 }
 ```
@@ -191,10 +197,16 @@ includeBuild("/path/to/komotion") {
     dependencySubstitution {
         substitute(module("dev.boling.komotion:komotion-core")).using(project(":komotion-core"))
         substitute(module("dev.boling.komotion:komotion-player")).using(project(":komotion-player"))
+        substitute(module("dev.boling.komotion:komotion-theme")).using(project(":komotion-theme"))
+        substitute(module("dev.boling.komotion:komotion-algo-viz")).using(project(":komotion-algo-viz"))
         substitute(module("dev.boling.komotion:komotion-export-desktop")).using(project(":komotion-export-desktop"))
     }
 }
 ```
+
+## Releasing
+
+Releases are published to Maven Central by the `Publish to Maven Central` GitHub workflow when a `v*` tag is pushed. See [RELEASING.md](RELEASING.md) for prerequisites, the release checklist and the human approval gates.
 
 ## License
 
