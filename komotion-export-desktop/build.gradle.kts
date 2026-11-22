@@ -1,5 +1,4 @@
 import com.vanniktech.maven.publish.KotlinMultiplatform
-import com.vanniktech.maven.publish.SonatypeHost
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -12,7 +11,7 @@ apply(from = rootProject.file("gradle/publish.gradle.kts"))
 
 mavenPublishing {
     configure(KotlinMultiplatform(javadocJar = com.vanniktech.maven.publish.JavadocJar.Empty()))
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    publishToMavenCentral()
     if (providers.gradleProperty("signingInMemoryKey").isPresent) {
         signAllPublications()
     }

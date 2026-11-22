@@ -1,5 +1,4 @@
 import com.vanniktech.maven.publish.KotlinMultiplatform
-import com.vanniktech.maven.publish.SonatypeHost
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -14,7 +13,7 @@ apply(from = rootProject.file("gradle/skiko-desktop-test-runtime.gradle"))
 
 mavenPublishing {
     configure(KotlinMultiplatform(javadocJar = com.vanniktech.maven.publish.JavadocJar.Empty()))
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    publishToMavenCentral()
     if (providers.gradleProperty("signingInMemoryKey").isPresent) {
         signAllPublications()
     }
@@ -69,6 +68,8 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.molecule.runtime)
+            implementation(libs.turbine)
         }
         // The desktopTest Skiko AWT runtime is added by
         // gradle/skiko-desktop-test-runtime.gradle.
