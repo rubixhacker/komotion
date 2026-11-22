@@ -16,6 +16,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { acquireLock } from "./lock.mts";
+import { ghCommandFailures, promptArgFailures } from "./check.mts";
 import { factorySandbox } from "./macos.mts";
 
 const root = resolve(process.cwd());
@@ -92,6 +93,23 @@ const decisionSchema = z.object({
   ),
 });
 
+// The gh subcommands the host issues. The check validates each one exists
+// in the installed gh, so an invalid subcommand is caught before a pass
+// spends agent time on it.
+const GH_COMMANDS: readonly (readonly string[])[] = [
+  ["api"],
+  ["issue", "list"],
+  ["issue", "edit"],
+  ["issue", "comment"],
+];
+
+// The prompt arguments the triage run passes. The check validates the keys
+// against the built-in prompt arguments the runtime injects itself, so the
+// run cannot collide with one before it starts.
+function triagePromptArgs(issues: OpenIssue[]): Record<string, string> {
+  return { ISSUES: JSON.stringify(issues, null, 2) };
+}
+
 function check(): void {
   const failures: string[] = [];
   try {
@@ -99,6 +117,8 @@ function check(): void {
   } catch {
     failures.push(`gh cannot read ${config.GITHUB_REPO}`);
   }
+  failures.push(...ghCommandFailures(GH_COMMANDS));
+  failures.push(...promptArgFailures([["triage", triagePromptArgs([])]]));
   const model = config.SANDCASTLE_MODEL.split("/")[1] ?? config.SANDCASTLE_MODEL;
   try {
     const body = execFileSync("curl", [
@@ -157,9 +177,7 @@ async function main(): Promise<void> {
       },
     }),
     promptFile: "./.sandcastle/triage-prompt.md",
-    promptArgs: {
-      ISSUES: JSON.stringify(issues, null, 2),
-    },
+    promptArgs: triagePromptArgs(issues),
     output: sandcastle.Output.object({ tag: "triage", schema: decisionSchema }),
     cwd: root,
   });

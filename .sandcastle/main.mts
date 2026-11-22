@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { acquireLock } from "./lock.mts";
+import { ghCommandFailures, promptArgFailures } from "./check.mts";
 import { factorySandbox } from "./macos.mts";
 
 const root = resolve(process.cwd());
@@ -181,6 +182,44 @@ function writeStrikes(ledger: StrikeLedger): void {
 // Environment check
 // ---------------------------------------------------------------------------
 
+// The gh subcommands the host issues. The check validates each one exists
+// in the installed gh, so an invalid subcommand is caught before a pass
+// spends agent time on it.
+const GH_COMMANDS: readonly (readonly string[])[] = [
+  ["api"],
+  ["issue", "list"],
+  ["issue", "edit"],
+  ["issue", "comment"],
+  ["pr", "list"],
+  ["pr", "create"],
+  ["pr", "merge"],
+  ["pr", "checks"],
+];
+
+// The prompt arguments each agent run passes. The check validates the keys
+// against the built-in prompt arguments the runtime injects itself, so a
+// run cannot collide with one before it starts.
+function plannerPromptArgs(issues: QueueIssue[]): Record<string, string> {
+  return { ISSUES: JSON.stringify(issues, null, 2) };
+}
+
+function implementerPromptArgs(
+  issue: QueueIssue,
+  branch: string,
+  contextFile: string,
+): Record<string, string> {
+  return {
+    TASK_ID: String(issue.number),
+    ISSUE_TITLE: issue.title,
+    BRANCH: branch,
+    ISSUE_CONTEXT_FILE: contextFile,
+  };
+}
+
+function reviewerPromptArgs(branch: string): Record<string, string> {
+  return { BRANCH: branch };
+}
+
 function check(): void {
   const failures: string[] = [];
   try {
@@ -188,6 +227,15 @@ function check(): void {
   } catch {
     failures.push(`gh cannot read ${config.GITHUB_REPO}`);
   }
+  failures.push(...ghCommandFailures(GH_COMMANDS));
+  const dummyIssue: QueueIssue = { number: 0, title: "", body: "", labels: [], comments: [] };
+  failures.push(
+    ...promptArgFailures([
+      ["planner", plannerPromptArgs([])],
+      ["implementer", implementerPromptArgs(dummyIssue, "", "")],
+      ["reviewer", reviewerPromptArgs("")]],
+    ),
+  );
   const model = agentModel.split("/")[1] ?? agentModel;
   try {
     const body = execFileSync("curl", [
@@ -283,9 +331,7 @@ async function main(): Promise<void> {
       env: agentRunEnv(),
     }),
     promptFile: "./.sandcastle/plan-prompt.md",
-    promptArgs: {
-      ISSUES: JSON.stringify(eligible, null, 2),
-    },
+    promptArgs: plannerPromptArgs(eligible),
     output: sandcastle.Output.object({ tag: "plan", schema: planSchema }),
     cwd: root,
   });
@@ -396,12 +442,7 @@ async function workTicket(
       maxIterations: 100,
       agent: sandcastle.opencode(agentModel, { captureSessions: false, env: agentEnv }),
       promptFile: "./.sandcastle/implement-prompt.md",
-      promptArgs: {
-        TASK_ID: String(issue.number),
-        ISSUE_TITLE: issue.title,
-        BRANCH: branch,
-        ISSUE_CONTEXT_FILE: contextFile,
-      },
+      promptArgs: implementerPromptArgs(issue, branch, contextFile),
       signal: budgetSignal,
     });
     commits = implement.commits;
@@ -415,9 +456,7 @@ async function workTicket(
         // TARGET_BRANCH is a built-in prompt argument (the host's current
         // branch, which the runtime keeps at origin/main), so it cannot be
         // passed here.
-        promptArgs: {
-          BRANCH: branch,
-        },
+        promptArgs: reviewerPromptArgs(branch),
         signal: budgetSignal,
       });
       commits = [...commits, ...review.commits];
