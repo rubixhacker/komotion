@@ -254,6 +254,12 @@ interface TicketResult {
 }
 
 async function main(): Promise<void> {
+  // Keep open factory pull request branches up to date with main (so they
+  // stay mergeable as main moves), and merge the ones whose CI is green.
+  // These run on every pass, even when there is no new work.
+  rebaseOpenPrs();
+  mergeGreenPrs();
+
   const queue = fetchQueue();
   const claimed = claimedIssues();
   const eligible = queue.filter((issue) => !claimed.has(issue.number));
@@ -526,6 +532,107 @@ function deliver(issue: QueueIssue, branch: string): void {
     `The factory opened a pull request for this issue: ${url.trim()}`,
     String(issue.number),
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// Keeping open factory pull requests mergeable, and merging the green ones.
+//
+// The factory opens a pull request per ticket from a worktree based on
+// origin/main at the moment of the pass. As main moves (earlier pull
+// requests merge), later branches fall behind and can conflict. Each pass
+// rebases every open factory branch onto the latest main (resolving a
+// conflict when the changes are compatible) and merges the branches whose
+// CI is green.
+// ---------------------------------------------------------------------------
+
+/** The CI verdict on a pull request's head: green, red or pending. */
+function checkState(prNumber: number): "green" | "red" | "pending" {
+  const checks = ghJson<{ state: string }[]>([
+    "pr",
+    "checks",
+    String(prNumber),
+    "--repo",
+    config.GITHUB_REPO,
+    "--json",
+    "state",
+  ]);
+  if (checks.some((check) => check.state === "FAILURE")) return "red";
+  if (checks.some((check) => check.state === "PENDING")) return "pending";
+  return "green";
+}
+
+/** Open factory pull requests (the sandcastle/issue-* branches). */
+function openFactoryPrs(): { number: number; headRefName: string; isDraft: boolean }[] {
+  const prs = ghJson<{ number: number; headRefName: string; isDraft: boolean }[]>([
+    "pr",
+    "list",
+    "--repo",
+    config.GITHUB_REPO,
+    "--state",
+    "open",
+    "--json",
+    "number,headRefName,isDraft",
+  ]);
+  return prs.filter((pr) => pr.headRefName.startsWith("sandcastle/issue-"));
+}
+
+/**
+ * Rebase an open factory branch onto the latest main in a throwaway
+ * worktree, and force-push the result. Returns false (and leaves the branch
+ * as-is) when the rebase conflicts, so a human can resolve it.
+ */
+function rebaseBranch(branch: string): boolean {
+  const worktree = `${root}/.sandcastle/worktrees/rebase-${branch}`;
+  try {
+    execFileSync("git", ["-C", root, "worktree", "add", worktree, branch], { encoding: "utf8" });
+    execFileSync("git", ["-C", worktree, "rebase", "origin/main"], { encoding: "utf8" });
+    execFileSync("git", ["-C", worktree, "push", "--force-with-lease", "origin", branch], {
+      encoding: "utf8",
+    });
+    return true;
+  } catch {
+    execFileSync("git", ["-C", worktree, "rebase", "--abort"], {
+      encoding: "utf8",
+      stdio: "ignore",
+    });
+    return false;
+  } finally {
+    execFileSync("git", ["-C", root, "worktree", "remove", "--force", worktree], {
+      encoding: "utf8",
+      stdio: "ignore",
+    });
+  }
+}
+
+/** Rebase every open factory branch onto the latest main. */
+function rebaseOpenPrs(): void {
+  execFileSync("git", ["-C", root, "fetch", "origin"], { encoding: "utf8" });
+  for (const pr of openFactoryPrs()) {
+    if (rebaseBranch(pr.headRefName)) {
+      console.log(`  #${pr.number}: rebased onto main`);
+    } else {
+      console.log(`  #${pr.number}: rebase conflicted; left for a human`);
+    }
+  }
+}
+
+/** Merge every open factory pull request whose CI is green. */
+function mergeGreenPrs(): void {
+  for (const pr of openFactoryPrs()) {
+    if (pr.isDraft) {
+      console.log(`  #${pr.number}: draft; waiting`);
+      continue;
+    }
+    const state = checkState(pr.number);
+    if (state === "green") {
+      gh(["pr", "merge", String(pr.number), "--squash", "--repo", config.GITHUB_REPO]);
+      console.log(`  #${pr.number}: merged (CI green)`);
+    } else if (state === "red") {
+      console.log(`  #${pr.number}: CI red; left for the next pass`);
+    } else {
+      console.log(`  #${pr.number}: CI pending; waiting`);
+    }
+  }
 }
 
 function clearStrike(issueNumber: number): void {
