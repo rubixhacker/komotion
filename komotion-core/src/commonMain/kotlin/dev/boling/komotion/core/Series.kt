@@ -8,14 +8,15 @@ import androidx.compose.runtime.CompositionLocalProvider
  * ends, and each scene's children see a [LocalFrame] clock re-based to 0 at
  * the scene's start.
  *
- * [SeriesScope.Sequence.offset] shifts a scene relative to where it would
- * otherwise start: a positive offset leaves a gap after the previous scene, a
- * negative offset overlaps the previous scene. Because the timeline cursor
- * advances to each scene's end, an offset shifts every following scene too.
+ * The `offset` parameter of [SeriesScope.Sequence] shifts a scene relative to
+ * where it would otherwise start: a positive offset leaves a gap after the
+ * previous scene, a negative offset overlaps the previous scene. Because the
+ * timeline cursor advances to each scene's end, an offset shifts every
+ * following scene too.
  *
- * The last scene may be infinite — pass a negative
- * [SeriesScope.Sequence.durationInFrames] to run it until the end of the
- * composition. Earlier scenes must have a positive duration.
+ * The last scene may be infinite — pass a negative `durationInFrames` to
+ * [SeriesScope.Sequence] to run it until the end of the composition. Earlier
+ * scenes must have a positive duration.
  *
  * ```
  * Series {
@@ -70,8 +71,8 @@ class SeriesScope internal constructor() {
 
     @Composable
     internal fun compose() {
+        val globalFrame = LocalFrame.current
         planSceneWindows(plans).zip(contents).forEach { (window, content) ->
-            val globalFrame = LocalFrame.current
             // Outside the window, compose nothing — the scene reserves no space
             // in the parent and its content is not called.
             if (globalFrame in window.from until window.end) {
@@ -91,10 +92,10 @@ internal data class SceneWindow(val from: Int, val end: Int)
 
 /**
  * Pure frame arithmetic: resolves each declared scene into a [from, end)
- * window. Scenes start back to back; a scene's [ScenePlan.offset] shifts it
- * relative to the previous scene's end, and — because the cursor advances to
- * the scene's end — shifts every following scene too. A negative
- * [ScenePlan.durationInFrames] makes the scene run until [Int.MAX_VALUE].
+ * window. Scenes start back to back; a scene's `offset` shifts it relative to
+ * the previous scene's end, and — because the cursor advances to the scene's
+ * end — shifts every following scene too. A negative `durationInFrames` makes
+ * the scene run until `Int.MAX_VALUE`.
  */
 internal fun planSceneWindows(plans: List<ScenePlan>): List<SceneWindow> {
     val windows = ArrayList<SceneWindow>(plans.size)
