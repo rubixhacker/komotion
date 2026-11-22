@@ -92,6 +92,14 @@ function ghJson<T>(args: readonly string[]): T {
   return JSON.parse(gh(args)) as T;
 }
 
+function addLabel(issue: number, label: string): void {
+  gh(["issue", "edit", String(issue), "--add-label", label, "--repo", config.GITHUB_REPO]);
+}
+
+function removeLabel(issue: number, label: string): void {
+  gh(["issue", "edit", String(issue), "--remove-label", label, "--repo", config.GITHUB_REPO]);
+}
+
 interface QueueIssue {
   number: number;
   title: string;
@@ -341,7 +349,7 @@ async function workTicket(
   mkdirSync(resolve(root, ".sandcastle/logs"), { recursive: true });
   writeFileSync(contextPath, JSON.stringify(issue, null, 2));
 
-  gh(["label", "add", config.INFLIGHT_LABEL, "--repo", config.GITHUB_REPO, String(issue.number)]);
+  addLabel(issue.number, config.INFLIGHT_LABEL);
 
   let sandbox: sandcastle.Sandbox;
   try {
@@ -363,7 +371,7 @@ async function workTicket(
       },
     });
   } catch (error) {
-    gh(["label", "remove", config.INFLIGHT_LABEL, "--repo", config.GITHUB_REPO, String(issue.number)]);
+    removeLabel(issue.number, config.INFLIGHT_LABEL);
     throw error;
   }
 
@@ -434,7 +442,7 @@ async function workTicket(
     try {
       deliver(issue, branch);
       clearStrike(issue.number);
-      gh(["label", "remove", config.INFLIGHT_LABEL, "--repo", config.GITHUB_REPO, String(issue.number)]);
+      removeLabel(issue.number, config.INFLIGHT_LABEL);
       return { issue, branch, status: "delivered", detail: "pull request opened" };
     } catch (error) {
       failure = `delivery failed: ${String(error)}`;
@@ -456,8 +464,8 @@ async function workTicket(
     ledger[String(issue.number)] = strike;
     writeStrikes(ledger);
     if (strike.count >= config.SANDCASTLE_TICKET_STRIKES) {
-      gh(["label", "add", config.HANDOFF_LABEL, "--repo", config.GITHUB_REPO, String(issue.number)]);
-      gh(["label", "remove", config.QUEUE_LABEL, "--repo", config.GITHUB_REPO, String(issue.number)]);
+      addLabel(issue.number, config.HANDOFF_LABEL);
+      removeLabel(issue.number, config.QUEUE_LABEL);
       gh([
         "issue",
         "comment",
@@ -475,7 +483,7 @@ async function workTicket(
       ]);
       clearStrike(issue.number);
     }
-    gh(["label", "remove", config.INFLIGHT_LABEL, "--repo", config.GITHUB_REPO, String(issue.number)]);
+    removeLabel(issue.number, config.INFLIGHT_LABEL);
   }
   return { issue, branch, status: "failed", detail: failure ?? "no commits" };
 }

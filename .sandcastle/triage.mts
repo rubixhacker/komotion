@@ -48,6 +48,14 @@ function ghJson<T>(args: readonly string[]): T {
   return JSON.parse(gh(args)) as T;
 }
 
+function addLabel(issue: number, label: string): void {
+  gh(["issue", "edit", String(issue), "--add-label", label, "--repo", config.GITHUB_REPO]);
+}
+
+function removeLabel(issue: number, label: string): void {
+  gh(["issue", "edit", String(issue), "--remove-label", label, "--repo", config.GITHUB_REPO]);
+}
+
 interface OpenIssue {
   number: number;
   title: string;
@@ -159,10 +167,8 @@ async function main(): Promise<void> {
   const decisions = result.output.decisions;
   console.log(`triage: ${decisions.length} decision(s)`);
   for (const decision of decisions) {
-    for (const label of decision.add)
-      gh(["label", "add", label, "--repo", config.GITHUB_REPO, String(decision.issue)]);
-    for (const label of decision.remove)
-      gh(["label", "remove", label, "--repo", config.GITHUB_REPO, String(decision.issue)]);
+    for (const label of decision.add) addLabel(decision.issue, label);
+    for (const label of decision.remove) removeLabel(decision.issue, label);
     if (decision.note)
       gh([
         "issue",
