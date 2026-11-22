@@ -12,7 +12,8 @@ import kotlin.math.round
  * Controls how [interpolate] behaves when the input falls outside the
  * keyframe range.
  *
- * - [extend]: continues the first/last segment linearly beyond the range.
+ * - [extend]: continues the first/last segment beyond the range, easing the
+ *   extrapolated fraction with that segment's easing.
  * - [clamp]: holds the first/last keyframe value (the default).
  * - [wrap]: wraps the input around the keyframe range, so the animation repeats.
  * - [identity]: returns the input itself, unchanged. Only meaningful for
@@ -93,12 +94,12 @@ fun interpolateColor(
     options: InterpolateOptions = InterpolateOptions(),
 ): Color {
     val resolved = resolve(input, inputRange, outputRange, options)
-    require(resolved !is Resolved.Identity) {
-        "ExtrapolateMode.identity is not supported for Color output"
-    }
     return when (resolved) {
         is Resolved.Segment -> lerpColor(outputRange[resolved.index], outputRange[resolved.index + 1], resolved.fraction)
         is Resolved.Single -> outputRange[resolved.index]
+        is Resolved.Identity -> throw IllegalArgumentException(
+            "ExtrapolateMode.identity is not supported for Color output"
+        )
     }
 }
 
@@ -112,12 +113,12 @@ fun interpolateDp(
     options: InterpolateOptions = InterpolateOptions(),
 ): Dp {
     val resolved = resolve(input, inputRange, outputRange, options)
-    require(resolved !is Resolved.Identity) {
-        "ExtrapolateMode.identity is not supported for Dp output"
-    }
     return when (resolved) {
         is Resolved.Segment -> lerpDp(outputRange[resolved.index], outputRange[resolved.index + 1], resolved.fraction)
         is Resolved.Single -> outputRange[resolved.index]
+        is Resolved.Identity -> throw IllegalArgumentException(
+            "ExtrapolateMode.identity is not supported for Dp output"
+        )
     }
 }
 
@@ -132,12 +133,9 @@ fun interpolateFloats(
     outputRange: List<FloatArray>,
     options: InterpolateOptions = InterpolateOptions(),
 ): FloatArray {
+    val resolved = resolve(input, inputRange, outputRange, options)
     require(outputRange.all { it.size == outputRange.first().size }) {
         "Every element of outputRange must have the same number of components"
-    }
-    val resolved = resolve(input, inputRange, outputRange, options)
-    require(resolved !is Resolved.Identity) {
-        "ExtrapolateMode.identity is not supported for multi-component output"
     }
     return when (resolved) {
         is Resolved.Segment -> {
@@ -146,6 +144,9 @@ fun interpolateFloats(
             FloatArray(a.size) { a[it] + (b[it] - a[it]) * resolved.fraction }
         }
         is Resolved.Single -> outputRange[resolved.index].copyOf()
+        is Resolved.Identity -> throw IllegalArgumentException(
+            "ExtrapolateMode.identity is not supported for multi-component output"
+        )
     }
 }
 
@@ -217,8 +218,8 @@ fun interpolateDp(
 
 /**
  * Where the (posterized) [input] lands on the keyframe path: an eased
- * [Resolved.Segment.fraction] within segment [Resolved.Segment.index] (which may
- * be < 0 or > 1 when extended), a [Resolved.Single] keyframe, or an
+ * [Resolved.Segment.fraction] within segment [Resolved.Segment.index] (the fraction
+ * may be < 0 or > 1 when extended), a [Resolved.Single] keyframe, or an
  * [Resolved.Identity] passthrough of the posterized input.
  */
 internal sealed class Resolved {
@@ -247,33 +248,41 @@ private fun <T> resolve(input: Int, inputRange: List<Int>, outputRange: List<T>,
     val effective = input / options.posterize * options.posterize
     val first = inputRange.first()
     val last = inputRange.last()
+    val wrapTo = { x: Int -> resolveInRange(first + mod(x - first, last - first), inputRange, options) }
 
     return when {
         effective < first -> when (options.extrapolateLeft) {
             ExtrapolateMode.clamp -> Resolved.Segment(0, 0f)
             ExtrapolateMode.identity -> Resolved.Identity(effective)
-            ExtrapolateMode.extend -> Resolved.Segment(0, ease(options, 0, (effective - first).toFloat() / (inputRange[1] - first).toFloat()))
-            ExtrapolateMode.wrap -> within(first + mod(effective - first, last - first), inputRange, options)
+            ExtrapolateMode.extend -> Resolved.Segment(0, ease(options, 0, extendFraction(effective, first, inputRange[1])))
+            ExtrapolateMode.wrap -> wrapTo(effective)
         }
         effective > last -> when (options.extrapolateRight) {
             ExtrapolateMode.clamp -> Resolved.Segment(segments - 1, 1f)
             ExtrapolateMode.identity -> Resolved.Identity(effective)
-            ExtrapolateMode.extend -> Resolved.Segment(segments - 1, ease(options, segments - 1, (effective - inputRange[segments - 1]).toFloat() / (last - inputRange[segments - 1]).toFloat()))
-            ExtrapolateMode.wrap -> within(first + mod(effective - first, last - first), inputRange, options)
+            ExtrapolateMode.extend -> Resolved.Segment(segments - 1, ease(options, segments - 1, extendFraction(effective, inputRange[segments - 1], last)))
+            ExtrapolateMode.wrap -> wrapTo(effective)
         }
-        else -> within(effective, inputRange, options)
+        else -> resolveInRange(effective, inputRange, options)
     }
 }
 
 /**
  * Resolves [input] to an eased segment, assuming it is within the keyframe range.
  */
-private fun within(input: Int, inputRange: List<Int>, options: InterpolateOptions): Resolved.Segment {
+private fun resolveInRange(input: Int, inputRange: List<Int>, options: InterpolateOptions): Resolved.Segment {
     var i = 0
     while (i < inputRange.lastIndex && input > inputRange[i + 1]) i++
     val fraction = (input - inputRange[i]).toFloat() / (inputRange[i + 1] - inputRange[i]).toFloat()
     return Resolved.Segment(i, ease(options, i, fraction))
 }
+
+/**
+ * The fraction of the way from [from] to [to] that [effective] lies, for
+ * extrapolation beyond the range (negative before [from], > 1 after [to]).
+ */
+private fun extendFraction(effective: Int, from: Int, to: Int): Float =
+    (effective - from).toFloat() / (to - from).toFloat()
 
 /**
  * Applies the easing for segment [segment] to [fraction].
