@@ -13,7 +13,7 @@ class HashingTest {
     }
 
     @Test
-    fun `foobar matches the FNV-1a 64 reference vector`() {
+    fun `foobar hash is stable`() {
         // The issue (#4) cited 0x85944171f73967e8 / -8821353812377366552L, but those two
         // values are inconsistent with each other and do not correspond to any FNV-1a 64
         // variant. We pin the canonical output of this implementation's algorithm
