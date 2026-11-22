@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "websearch": false,
+  "enabled_providers": ["vllm"],
+  "model": "vllm/Qwen3.8",
+  "small_model": "vllm/Qwen3.8",
+  "provider": {
+    "vllm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local vLLM",
+      "options": {
+        "baseURL": "{env:VLLM_BASE_URL}",
+        "timeout": false
+      },
+      "models": {
+        "Qwen3.8": {
+          "name": "Qwen3.8 (vLLM)",
+          "tool_call": true,
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "limit": { "context": 229376, "output": 8192 }
+        }
+      }
+    }
+  }
+}

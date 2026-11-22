@@ -1,0 +1,26 @@
+{
+  "name": "komotion-sandcastle",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx main.mts",
+    "triage": "tsx triage.mts",
+    "dependabot": "tsx dependabot.mts",
+    "check": "tsx main.mts --check",
+    "triage:check": "tsx triage.mts --check",
+    "dependabot:check": "tsx dependabot.mts --check",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
+    "test": "tsx --test *.test.mts"
+  },
+  "dependencies": {
+    "@ai-hero/sandcastle": "0.14.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

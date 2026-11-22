@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.rubixhacker.sandcastle.__LANE__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__HOME__/Workspace/komotion-factory/scripts/ci/sandcastle-lane.sh</string>
+    <string>__LANE__</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__HOME__/Workspace/komotion-factory</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/opt/openjdk@21/bin:/opt/homebrew/bin:__HOME__/.opencode/bin:__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>TZ</key>
+    <string>UTC</string>
+    <key>SANDCASTLE_RUNTIME_DIR</key>
+    <string>__HOME__/Workspace/komotion-factory</string>
+  </dict>
+  __WATCHPATHS__
+  <key>StartInterval</key>
+  <integer>__INTERVAL__</integer>
+  <key>RunAtLoad</key>
+  <__RUNATLOAD__/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Workspace/komotion-factory/.sandcastle/logs/launchd-__LANE__.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Workspace/komotion-factory/.sandcastle/logs/launchd-__LANE__.err.log</string>
+</dict>
+</plist>
