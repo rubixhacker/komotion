@@ -34,7 +34,8 @@ consistency, and maintainability while preserving exact functionality.
    overly clever solutions, or removes helpful abstractions.
 
 5. **Apply project standards**: follow the coding standards defined in
-   @.sandcastle/CODING_STANDARDS.md
+   @.sandcastle/CODING_STANDARDS.md and the build and test conventions in
+   AGENTS.md
 
 6. **Preserve functionality**: never change what the code does — only how it
    does it. All original features, outputs, and behaviors must remain intact.

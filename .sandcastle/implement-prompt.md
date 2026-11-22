@@ -13,7 +13,8 @@ Work on branch {{BRANCH}}.
 
 This is Komotion, a frame-driven video animation library for Compose
 Multiplatform: every animation is a pure function of the current frame number.
-Read README.md and the module you touch before you change it. The modules are
+Read AGENTS.md for the build and test conventions, and read README.md and the
+module you touch before you change it. The modules are
 `komotion-core` (the core API), `komotion-player` (the embedded player),
 `komotion-export-desktop` (MP4 export), `komotion-theme`, `komotion-algo-viz`
 and `sample-app`.
