@@ -9,9 +9,10 @@ import dev.boling.komotion.core.Composition
 import dev.boling.komotion.player.KomotionPlayer
 import dev.boling.komotion.sample.compositions.BarChart
 import dev.boling.komotion.sample.compositions.FadeIn
+import dev.boling.komotion.sample.compositions.LoopDemo
 import dev.boling.komotion.sample.compositions.TitleCard
 
-private val demos = listOf("FadeIn", "TitleCard", "BarChart")
+private val demos = listOf("FadeIn", "TitleCard", "BarChart", "Loop")
 
 private val demoComposition = Composition(
     width = 1920,
@@ -29,6 +30,7 @@ fun App(
     val currentContent: @Composable () -> Unit = when (selectedDemo) {
         "FadeIn" -> { { FadeIn() } }
         "TitleCard" -> { { TitleCard() } }
+        "Loop" -> { { LoopDemo() } }
         else -> { { BarChart() } }
     }
 
