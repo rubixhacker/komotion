@@ -13,6 +13,7 @@
 import * as sandcastle from "@ai-hero/sandcastle";
 import { z } from "zod";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { acquireLock } from "./lock.mts";
 import { factorySandbox } from "./macos.mts";
@@ -140,7 +141,13 @@ async function main(): Promise<void> {
     sandbox: factorySandbox(),
     name: "triage",
     maxIterations: 1,
-    agent: sandcastle.opencode(config.SANDCASTLE_MODEL, { captureSessions: false }),
+    agent: sandcastle.opencode(config.SANDCASTLE_MODEL, {
+      captureSessions: false,
+      env: {
+        OPENCODE_CONFIG_CONTENT: readFileSync(resolve(root, ".sandcastle/opencode.json"), "utf8"),
+        VLLM_BASE_URL: config.VLLM_BASE_URL,
+      },
+    }),
     promptFile: "./.sandcastle/triage-prompt.md",
     promptArgs: {
       ISSUES: JSON.stringify(issues, null, 2),
