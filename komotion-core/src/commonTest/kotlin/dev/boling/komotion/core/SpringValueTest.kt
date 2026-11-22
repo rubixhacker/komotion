@@ -1,7 +1,7 @@
 package dev.boling.komotion.core
 
-import kotlin.math.abs
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class SpringValueTest {
@@ -133,11 +133,5 @@ class SpringValueTest {
             val eased = 20f + (80f - 20f) * easing.transform(fraction)
             assertEquals(eased, fromValue, 0.001f)
         }
-    }
-}
-
-private fun assertEquals(expected: Float, actual: Float, tolerance: Float) {
-    assert(abs(expected - actual) <= tolerance) {
-        "Expected $expected but was $actual (tolerance $tolerance)"
     }
 }
