@@ -65,15 +65,7 @@ class MediaExportTest {
             return
         }
 
-        val wav = File.createTempFile("komotion-audio-", ".wav")
-        wav.deleteOnExit()
-        val wavExit = ProcessBuilder(
-            "ffmpeg", "-y",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-            "-ar", "44100", "-ac", "1",
-            wav.absolutePath,
-        ).redirectErrorStream(true).start().waitFor()
-        assertEquals(0, wavExit, "WAV generation failed")
+        val wav = generateTestWav()
 
         val outputFile = File.createTempFile("komotion-media-", ".mp4")
         outputFile.deleteOnExit()
@@ -107,15 +99,7 @@ class MediaExportTest {
             return
         }
 
-        val wav = File.createTempFile("komotion-audio-", ".wav")
-        wav.deleteOnExit()
-        val wavExit = ProcessBuilder(
-            "ffmpeg", "-y",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-            "-ar", "44100", "-ac", "1",
-            wav.absolutePath,
-        ).redirectErrorStream(true).start().waitFor()
-        assertEquals(0, wavExit, "WAV generation failed")
+        val wav = generateTestWav()
 
         val outputFile = File.createTempFile("komotion-media-pipe-", ".mp4")
         outputFile.deleteOnExit()
@@ -146,6 +130,20 @@ class MediaExportTest {
         ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
     } catch (e: Exception) {
         false
+    }
+
+    /** Generates a one-second 440 Hz sine-wave WAV via FFmpeg. */
+    private fun generateTestWav(): File {
+        val wav = File.createTempFile("komotion-audio-", ".wav")
+        wav.deleteOnExit()
+        val exit = ProcessBuilder(
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+            "-ar", "44100", "-ac", "1",
+            wav.absolutePath,
+        ).redirectErrorStream(true).start().waitFor()
+        assertEquals(0, exit, "WAV generation failed")
+        return wav
     }
 
     private fun hasAudioStream(file: File): Boolean {
