@@ -427,6 +427,10 @@ class FfmpegFrameRenderer(
             }
         }
 
+        // Rendered frames are RGBA; encoders such as libx265 cannot encode an
+        // alpha layer, so convert to yuv420p up front. A custom codec may still
+        // override this with its own -pix_fmt.
+        args += listOf("-pix_fmt", "yuv420p")
         when (val codec = options.codec) {
             Codec.H264 -> args += standardCodecArgs("libx264")
             Codec.H265 -> args += standardCodecArgs("libx265")
@@ -452,10 +456,11 @@ class FfmpegFrameRenderer(
 
     /**
      * The built-in encoder arguments for the standard codecs (H.264, H.265).
+     * The output pixel format is set separately for all codecs, including
+     * [Codec.Custom].
      */
     private fun standardCodecArgs(ffmpegCodec: String): List<String> = listOf(
         "-vcodec", ffmpegCodec,
-        "-pix_fmt", "yuv420p",
         "-crf", crf.toString(),
         "-preset", preset.toFfmpegArg(),
     )

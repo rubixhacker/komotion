@@ -415,7 +415,7 @@ class ExportOptionsE2ETest {
             "ffmpeg", "-y", "-i", file.absolutePath,
             // The comma must be escaped so the filtergraph parser does not split
             // the expression at the comma.
-            "-vf", "select=eq(n\\,$index)", "-frames:v", "1", "-vsync", "0", png.absolutePath,
+            "-vf", "select=eq(n\\,$index)", "-frames:v", "1", "-fps_mode", "passthrough", png.absolutePath,
         ).redirectErrorStream(true).start().waitFor()
         assertTrue(exitCode == 0, "ffmpeg frame extraction failed (exit $exitCode)")
         val image = Image.makeFromEncoded(png.readBytes())

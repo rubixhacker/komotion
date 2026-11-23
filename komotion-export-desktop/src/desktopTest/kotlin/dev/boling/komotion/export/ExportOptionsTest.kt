@@ -139,6 +139,27 @@ class ExportOptionsTest {
         assertEquals("libx265", command[command.indexOf("-vcodec") + 1])
         assertEquals("30", command[command.indexOf("-crf") + 1])
         assertTrue(!command.contains("-preset"), "Custom codec should not add a preset")
+        // Rendered frames are RGBA, so the command converts them to yuv420p
+        // before the custom encoder args, which may still override the format.
+        val pixFmtIndex = command.indexOf("-pix_fmt")
+        assertTrue(pixFmtIndex >= 0, "Expected -pix_fmt in $command")
+        assertEquals("yuv420p", command[pixFmtIndex + 1])
+        assertTrue(pixFmtIndex < command.indexOf("-vcodec"), "pix_fmt should precede the custom args: $command")
+    }
+
+    @Test
+    fun `buildFfmpegCommand Custom codec with its own pix_fmt is not overridden`() {
+        val command = renderer.buildFfmpegCommand(
+            ffmpeg = "ffmpeg",
+            composition = composition,
+            outputPath = "/tmp/out.mp4",
+            audioTracks = emptyList(),
+            options = ExportOptions(codec = Codec.Custom(listOf("-vcodec", "libx265", "-pix_fmt", "yuv420p10", "-crf", "30"))),
+        )
+        val pixFmtIndices = command.indices.filter { command[it] == "-pix_fmt" }
+        assertEquals(2, pixFmtIndices.size, "Expected the default and the custom -pix_fmt: $command")
+        // The custom value comes last, so it wins.
+        assertEquals("yuv420p10", command[pixFmtIndices.last() + 1])
     }
 
     // --- muted ---------------------------------------------------------------
