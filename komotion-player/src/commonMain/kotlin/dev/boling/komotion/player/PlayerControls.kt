@@ -17,26 +17,32 @@ import androidx.compose.ui.unit.sp
  * Transport controls bar for [KomotionPlayer].
  *
  * @param currentFrame The currently displayed frame index.
- * @param totalFrames Total number of frames in the composition.
+ * @param windowStart First frame of the playback window.
+ * @param windowEnd Last frame of the playback window.
  * @param isPlaying Whether playback is active.
  * @param loop Whether playback loops.
+ * @param fullscreen Whether the player is in (or has requested) fullscreen.
  * @param onPlayPause Called when the play/pause button is tapped.
  * @param onSkipToStart Called when the skip-to-start button is tapped.
  * @param onSkipToEnd Called when the skip-to-end button is tapped.
  * @param onScrub Called with a new frame index when the scrubber moves.
  * @param onLoopToggle Called when the loop button is tapped.
+ * @param onFullscreenToggle Called when the fullscreen button is tapped.
  */
 @Composable
 fun PlayerControls(
     currentFrame: Int,
-    totalFrames: Int,
+    windowStart: Int,
+    windowEnd: Int,
     isPlaying: Boolean,
     loop: Boolean,
+    fullscreen: Boolean,
     onPlayPause: () -> Unit,
     onSkipToStart: () -> Unit,
     onSkipToEnd: () -> Unit,
     onScrub: (Int) -> Unit,
     onLoopToggle: () -> Unit,
+    onFullscreenToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -61,12 +67,12 @@ fun PlayerControls(
         Slider(
             value = currentFrame.toFloat(),
             onValueChange = { onScrub(it.toInt()) },
-            valueRange = 0f..(totalFrames - 1).coerceAtLeast(1).toFloat(),
+            valueRange = windowStart.toFloat()..windowEnd.coerceAtLeast(windowStart + 1).toFloat(),
             modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
         )
 
         Text(
-            text = "$currentFrame / ${totalFrames - 1}",
+            text = "$currentFrame / $windowEnd",
             fontSize = 12.sp,
             modifier = Modifier.width(72.dp),
         )
@@ -75,6 +81,12 @@ fun PlayerControls(
             Icon(
                 Icons.Filled.Repeat,
                 contentDescription = if (loop) "Disable loop" else "Enable loop",
+            )
+        }
+        IconButton(onClick = onFullscreenToggle) {
+            Icon(
+                if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                contentDescription = "Toggle fullscreen",
             )
         }
     }
