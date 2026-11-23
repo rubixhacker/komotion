@@ -41,7 +41,7 @@ internal fun requireFontData(path: String, data: ByteArray) {
     }
 }
 
-/** The smallest size a TTF/OTF/WOFF file can be. */
+/** A size below which the data cannot plausibly be a font. */
 private const val MIN_FONT_DATA_SIZE = 12
 
 /** SFNT (TTF/OTF) version 1.0 header. */
@@ -51,19 +51,12 @@ private val SFNT_HEADER = byteArrayOf(0, 1, 0, 0)
 private val WOFF_HEADER = "wOFF".encodeToByteArray()
 
 /** Returns true if [this] begins with [prefix]. */
-private fun ByteArray.startsWith(prefix: ByteArray): Boolean {
-    if (size < prefix.size) return false
-    for (i in prefix.indices) {
-        if (this[i] != prefix[i]) return false
-    }
-    return true
-}
+private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
+    size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
 
 /**
  * Returns true if [data] begins with a known font file header:
  * SFNT (TTF/OTF) version 1.0 (`00 01 00 00`) or WOFF/WOFF2 (`wOFF` / `wOFF2`).
  */
-private fun hasFontHeader(data: ByteArray): Boolean {
-    if (data.size < 4) return false
-    return data.startsWith(SFNT_HEADER) || data.startsWith(WOFF_HEADER)
-}
+private fun hasFontHeader(data: ByteArray): Boolean =
+    data.startsWith(SFNT_HEADER) || data.startsWith(WOFF_HEADER)
