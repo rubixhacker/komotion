@@ -40,7 +40,7 @@ class FfmpegFrameRenderer(
         render(composition, outputPath, content, audioTracks, null, onProgress)
     }
 
-    suspend fun render(
+    internal suspend fun render(
         composition: Composition,
         outputPath: String,
         content: @Composable () -> Unit,
@@ -382,9 +382,8 @@ class FfmpegFrameRenderer(
             val parts = mutableListOf<String>()
 
             if (input.trimStartFrame > 0 || input.trimEndFrame != null) {
-                val start = input.trimStartFrame / fps.toDouble()
-                val end = input.trimEndFrame?.let { it / fps.toDouble() }
-                parts += "atrim=start=$start" + (end?.let { ":end=$it" } ?: "")
+                val end = input.trimEndFrame?.let { ":end=${it / fps.toDouble()}" } ?: ""
+                parts += "atrim=start=${input.trimStartFrame / fps.toDouble()}$end"
             }
             if (input.playbackRate != 1f) {
                 parts += "atempo=${input.playbackRate}"

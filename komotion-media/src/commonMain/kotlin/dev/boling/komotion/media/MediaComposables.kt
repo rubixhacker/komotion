@@ -106,8 +106,7 @@ fun Image(
 
 /**
  * Shifts [startFrame] from the local frame space of the nearest enclosing
- * Sequence onto the global timeline, and registers the result with the
- * current collector under a stable per-call-site token.
+ * Sequence onto the global timeline.
  */
 @Composable
 internal fun registerStartFrame(startFrame: Int): Int {
@@ -115,6 +114,11 @@ internal fun registerStartFrame(startFrame: Int): Int {
     return collector.frame - LocalFrame.current + startFrame
 }
 
+/**
+ * Registers [media] with the current [LocalMediaCollector] under a stable
+ * per-call-site token, so repeated compositions of the same call site
+ * update the declaration instead of duplicating it.
+ */
 @Composable
 internal fun registerDeclaration(media: Media) {
     val collector = LocalMediaCollector.current
