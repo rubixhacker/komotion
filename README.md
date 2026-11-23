@@ -15,6 +15,7 @@ Think [Remotion](https://www.remotion.dev/) — but for Kotlin and Compose.
 | Module | Targets | Description |
 |--------|---------|-------------|
 | `komotion-core` | Android, iOS, Desktop, wasmJs | Core API: `Composition`, `Sequence`, `interpolate`, `spring`, `LocalFrame` |
+| `komotion-media` | Android, iOS, Desktop, wasmJs | In-tree `Audio`, `Video` and `Image` media declarations and the `MediaCollector` |
 | `komotion-player` | Android, iOS, Desktop, wasmJs | Embedded player with play/pause, scrub, loop, and frame counter |
 | `komotion-export-desktop` | Desktop (JVM) | MP4 export via FFmpeg with audio mixing and video frame extraction |
 | `komotion-theme` | Android, iOS, Desktop, wasmJs | Shared design tokens: `KomotionTheme` with colors, typography and shapes |
@@ -200,6 +201,37 @@ renderer.render(composition, "output.mp4", audioTracks = audioTracks) {
 
 Audio is mixed via FFmpeg `adelay` + `amix` during export. Preview playback is silent.
 
+### In-tree Media
+
+Declare audio, video and image media directly inside your composition. The
+declarations are collected by a `MediaCollector` while the composition is
+composed, so preview and export consume the same declarations instead of a
+side-channel list:
+
+```kotlin
+Sequence(from = 30, durationInFrames = 30) {
+    Audio(
+        file = "/path/to/intro.wav",
+        startFrame = 5,          // relative to the enclosing Sequence
+        volume = 0.8f,
+        playbackRate = 1f,
+        trimStartFrame = 0,
+        trimEndFrame = null,     // play to the end of the file
+        muted = false,
+    )
+    Video(file = "/path/to/clip.mp4", startFrame = 0)
+    Image(file = "/path/to/still.png", startFrame = 10)
+}
+```
+
+`Audio`, `Video` and `Image` register with `LocalMediaCollector`; the start
+frame is shifted onto the global timeline by the enclosing `Sequence`.
+Media only registers while its enclosing sequence window is active. The
+exporter reads the collector's output and mixes the collected audio with
+volume, playback rate, trim and mute applied (via FFmpeg `atrim`, `atempo`,
+`adelay` and `volume`). `AudioTrack` remains the low-level export
+representation for explicitly passed tracks.
+
 ### Video Frame Extraction
 
 Embed pre-rendered MP4 clips in your composition (desktop export only):
@@ -258,6 +290,7 @@ In your `settings.gradle.kts`:
 includeBuild("/path/to/komotion") {
     dependencySubstitution {
         substitute(module("dev.boling.komotion:komotion-core")).using(project(":komotion-core"))
+        substitute(module("dev.boling.komotion:komotion-media")).using(project(":komotion-media"))
         substitute(module("dev.boling.komotion:komotion-player")).using(project(":komotion-player"))
         substitute(module("dev.boling.komotion:komotion-theme")).using(project(":komotion-theme"))
         substitute(module("dev.boling.komotion:komotion-algo-viz")).using(project(":komotion-algo-viz"))
