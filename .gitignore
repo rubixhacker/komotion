@@ -1,5 +1,7 @@
 .gradle/
 build/
 local.properties
+android-sdk/
+.kotlin/
 .superpowers/
 docs/superpowers/
