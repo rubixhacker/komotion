@@ -11,8 +11,8 @@ import androidx.compose.runtime.Composable
  *
  * @param id A unique identifier within the registry.
  * @param composition The dimensions, frame rate and duration of the animation.
- * @param defaultProps Default values for [props].
- * @param content Receives the entry's [props] and renders the composition.
+ * @param defaultProps The props passed to [content] when no props are supplied.
+ * @param content Receives the entry's props and renders the composition.
  */
 class CompositionEntry<P : Any>(
     val id: String,
