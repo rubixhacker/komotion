@@ -267,7 +267,7 @@ class FfmpegFrameRendererTest {
                     composition = composition,
                     outputPath = outputFile.absolutePath,
                     content = content,
-                    onProgress = { progressValues.add(it) },
+                    onProgress = { progressValues.add(it.framesCompleted) },
                 )
             }
         }
@@ -278,7 +278,7 @@ class FfmpegFrameRendererTest {
         assertEquals(10, progressValues.last(), "Final progress should equal total frames")
         // Progress should be monotonically increasing
         for (i in 1 until progressValues.size) {
-            assertTrue(progressValues[i] > progressValues[i - 1], "Progress should be monotonically increasing")
+            assertTrue(progressValues[i] >= progressValues[i - 1], "Progress should be monotonically increasing")
         }
     }
 

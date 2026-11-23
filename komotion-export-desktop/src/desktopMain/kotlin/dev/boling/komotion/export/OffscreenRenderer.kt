@@ -9,6 +9,7 @@ import dev.boling.komotion.core.Composition
 import dev.boling.komotion.core.LocalComposition
 import dev.boling.komotion.core.LocalFrame
 import org.jetbrains.skia.EncodedImageFormat
+import org.jetbrains.skia.Image
 
 /**
  * Renders composable frames to PNG byte arrays using Compose's [ImageComposeScene].
@@ -40,12 +41,7 @@ class OffscreenRenderer(private val composition: Composition) : AutoCloseable {
      * Renders [content] at [frame] and returns PNG-encoded bytes.
      */
     fun renderFrame(frame: Int, content: @Composable () -> Unit): ByteArray {
-        setRenderMode(true)
-        currentContent = content
-        frameState.value = frame
-        val nanoTime = frame * 1_000_000_000L / composition.fps
-        val image = scene.render(nanoTime)
-        return image.encodeToData(EncodedImageFormat.PNG)!!.bytes
+        return renderFrameImage(frame, content).encodeToData(EncodedImageFormat.PNG)!!.bytes
     }
 
     /**
@@ -53,12 +49,18 @@ class OffscreenRenderer(private val composition: Composition) : AutoCloseable {
      * Skips PNG encoding — faster than [renderFrame] for piped output.
      */
     fun renderFrameRaw(frame: Int, content: @Composable () -> Unit): ByteArray {
+        return renderFrameImage(frame, content).peekPixels()!!.buffer.bytes
+    }
+
+    /**
+     * Renders [content] at [frame] and returns the Skia [Image].
+     */
+    internal fun renderFrameImage(frame: Int, content: @Composable () -> Unit): Image {
         setRenderMode(true)
         currentContent = content
         frameState.value = frame
         val nanoTime = frame * 1_000_000_000L / composition.fps
-        val image = scene.render(nanoTime)
-        return image.peekPixels()!!.buffer.bytes
+        return scene.render(nanoTime)
     }
 
     override fun close() {
