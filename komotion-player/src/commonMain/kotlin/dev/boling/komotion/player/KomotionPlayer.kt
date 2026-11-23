@@ -100,7 +100,7 @@ fun KomotionPlayer(
     }
 
     fun seek(frame: Int) {
-        if (frame < 0 || frame >= composition.durationInFrames) {
+        if (frame !in 0..lastFrame) {
             val message = "Seek to frame $frame is outside the composition (0..$lastFrame)"
             error = message
             emit(KomotionPlayerEvent.Error(message))

@@ -58,6 +58,9 @@ class KomotionPlayerController(
     /** Internal: the player composable collects commands from this flow. */
     internal val _commands = MutableSharedFlow<KomotionPlayerCommand>(extraBufferCapacity = 64)
 
+    /** Internal: the player composable collects commands from this flow. */
+    internal val commands: SharedFlow<KomotionPlayerCommand> = _commands.asSharedFlow()
+
     /** Starts or resumes playback. */
     fun play() {
         _commands.tryEmit(KomotionPlayerCommand.Play)
@@ -97,12 +100,6 @@ class KomotionPlayerController(
     fun requestFullscreen() {
         _commands.tryEmit(KomotionPlayerCommand.RequestFullscreen)
     }
-
-    /**
-     * Internal: the player composable collects commands from this flow and
-     * applies them to its state.
-     */
-    internal val commands: SharedFlow<KomotionPlayerCommand> = _commands.asSharedFlow()
 }
 
 /** Internal: a command sent by [KomotionPlayerController] to the player. */
