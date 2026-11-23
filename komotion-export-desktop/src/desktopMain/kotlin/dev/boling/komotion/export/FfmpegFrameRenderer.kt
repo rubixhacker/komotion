@@ -429,18 +429,8 @@ class FfmpegFrameRenderer(
         }
 
         when (val codec = options.codec) {
-            Codec.H264 -> args += listOf(
-                "-vcodec", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-crf", crf.toString(),
-                "-preset", preset.toFfmpegArg(),
-            )
-            Codec.H265 -> args += listOf(
-                "-vcodec", "libx265",
-                "-pix_fmt", "yuv420p",
-                "-crf", crf.toString(),
-                "-preset", preset.toFfmpegArg(),
-            )
+            Codec.H264 -> args += standardCodecArgs("libx264")
+            Codec.H265 -> args += standardCodecArgs("libx265")
             is Codec.Custom -> args += codec.args
         }
 
@@ -460,6 +450,16 @@ class FfmpegFrameRenderer(
 
         return args
     }
+
+    /**
+     * The built-in encoder arguments for the standard codecs (H.264, H.265).
+     */
+    private fun standardCodecArgs(ffmpegCodec: String): List<String> = listOf(
+        "-vcodec", ffmpegCodec,
+        "-pix_fmt", "yuv420p",
+        "-crf", crf.toString(),
+        "-preset", preset.toFfmpegArg(),
+    )
 
     /**
      * The FFmpeg audio codec for a separate audio file, chosen from its extension.
