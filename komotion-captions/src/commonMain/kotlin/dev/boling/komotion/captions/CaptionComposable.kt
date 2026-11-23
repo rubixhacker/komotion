@@ -48,15 +48,15 @@ private fun CaptionText(
     color: Color?,
     backgroundColor: Color?,
 ) {
-    val themeColors = KomotionTheme.colors
-    val themeShapes = KomotionTheme.shapes
-    val themeTypography = KomotionTheme.typography
+    val colors = KomotionTheme.colors
+    val shapes = KomotionTheme.shapes
+    val typography = KomotionTheme.typography
     Text(
         text = cue.text,
         modifier = modifier
-            .background(color = backgroundColor ?: themeColors.surface, shape = themeShapes.medium)
+            .background(color = backgroundColor ?: colors.surface, shape = shapes.medium)
             .padding(8.dp),
-        style = style ?: themeTypography.body,
-        color = color ?: themeColors.text,
+        style = style ?: typography.body,
+        color = color ?: colors.text,
     )
 }
