@@ -11,10 +11,11 @@ import dev.boling.komotion.sample.compositions.BarChart
 import dev.boling.komotion.sample.compositions.FadeIn
 import dev.boling.komotion.sample.compositions.FreezeDemo
 import dev.boling.komotion.sample.compositions.LoopDemo
+import dev.boling.komotion.sample.compositions.RandomDemo
 import dev.boling.komotion.sample.compositions.TitleCard
 import dev.boling.komotion.sample.compositions.TransitionDemo
 
-private val demos = listOf("FadeIn", "TitleCard", "BarChart", "Loop", "Freeze", "Transition")
+private val demos = listOf("FadeIn", "TitleCard", "BarChart", "Loop", "Freeze", "Transition", "Random")
 
 private val demoComposition = Composition(
     width = 1920,
@@ -35,6 +36,7 @@ fun App(
         "Loop" -> { { LoopDemo() } }
         "Freeze" -> { { FreezeDemo() } }
         "Transition" -> { { TransitionDemo() } }
+        "Random" -> { { RandomDemo() } }
         else -> { { BarChart() } }
     }
 
