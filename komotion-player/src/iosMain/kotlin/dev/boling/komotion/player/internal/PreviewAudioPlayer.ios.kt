@@ -20,7 +20,7 @@ internal class IosPreviewAudioPlayer : PreviewAudioPlayer {
     @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
     override fun load(file: String) {
         val url = NSURL.fileURLWithPath(file)
-        val newPlayer = AVAudioPlayer(url, null) ?: return
+        val newPlayer = AVAudioPlayer(url, null)
         newPlayer.prepareToPlay()
         newPlayer.volume = if (muted) 0f else volume
         player = newPlayer
