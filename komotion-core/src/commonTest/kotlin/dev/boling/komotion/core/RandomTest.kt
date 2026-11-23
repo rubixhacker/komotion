@@ -5,6 +5,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -67,5 +68,68 @@ class RandomTest {
             }
         }
         assertEquals(first, second)
+    }
+
+    @Test
+    fun `pick returns an element from the list across many seeds`() {
+        val list = listOf("red", "green", "blue", "yellow")
+        repeat(200) { i ->
+            assertTrue(list.contains(pick("seed-$i", list)), "string seed pick out of list: seed-$i")
+            assertTrue(list.contains(pick(i.toLong(), list)), "long seed pick out of list: $i")
+        }
+        runComposeUiTest {
+            val values = ArrayList<String>(2)
+            setContent {
+                CompositionLocalProvider(LocalFrame provides 42) {
+                    values.add(pickPerFrame("seed-0", list))
+                }
+                CompositionLocalProvider(LocalFrame provides 43) {
+                    values.add(pickPerFrame(0L, list))
+                }
+            }
+            assertTrue(list.containsAll(values), "per-frame pick out of list: $values")
+        }
+    }
+
+    @Test
+    fun `pick is deterministic for the same seed`() {
+        val list = listOf("red", "green", "blue", "yellow", "purple")
+        repeat(100) { i ->
+            assertEquals(pick("seed-$i", list), pick("seed-$i", list))
+            assertEquals(pick(i.toLong(), list), pick(i.toLong(), list))
+        }
+        runComposeUiTest {
+            val first = ArrayList<String>(2)
+            val second = ArrayList<String>(2)
+            setContent {
+                CompositionLocalProvider(LocalFrame provides 42) {
+                    first.add(pickPerFrame("seed-0", list))
+                    first.add(pickPerFrame(0L, list))
+                }
+                CompositionLocalProvider(LocalFrame provides 42) {
+                    second.add(pickPerFrame("seed-0", list))
+                    second.add(pickPerFrame(0L, list))
+                }
+            }
+            assertEquals(first, second)
+        }
+    }
+
+    @Test
+    fun `pick on an empty list throws IllegalArgumentException`() {
+        assertFailsWith<IllegalArgumentException> { pick("seed-0", emptyList<String>()) }
+        assertFailsWith<IllegalArgumentException> { pick(0L, emptyList<String>()) }
+        runComposeUiTest {
+            setContent {
+                CompositionLocalProvider(LocalFrame provides 42) {
+                    assertFailsWith<IllegalArgumentException> {
+                        pickPerFrame("seed-0", emptyList<String>())
+                    }
+                    assertFailsWith<IllegalArgumentException> {
+                        pickPerFrame(0L, emptyList<String>())
+                    }
+                }
+            }
+        }
     }
 }
