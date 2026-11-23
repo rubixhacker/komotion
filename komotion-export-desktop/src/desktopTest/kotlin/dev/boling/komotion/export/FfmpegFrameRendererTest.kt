@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Collections
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -145,10 +146,7 @@ class FfmpegFrameRendererTest {
 
     @Test
     fun `renders composition to mp4 with default settings`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }
@@ -178,10 +176,7 @@ class FfmpegFrameRendererTest {
 
     @Test
     fun `renders composition to mp4 via pipe mode`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }
@@ -211,10 +206,7 @@ class FfmpegFrameRendererTest {
 
     @Test
     fun `renders composition to mp4 via PngSequence mode`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }
@@ -244,10 +236,7 @@ class FfmpegFrameRendererTest {
 
     @Test
     fun `pipe mode reports correct progress`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }
@@ -260,7 +249,9 @@ class FfmpegFrameRendererTest {
             Box(Modifier.fillMaxSize().background(Color.Red))
         }
 
-        val progress = mutableListOf<RenderProgress>()
+        // onProgress is invoked from the Main (rendering) and IO (writing)
+        // dispatchers concurrently, so collect it in a thread-safe list.
+        val progress = Collections.synchronizedList(mutableListOf<RenderProgress>())
 
         runBlocking {
             withContext(Dispatchers.Main) {
@@ -288,10 +279,7 @@ class FfmpegFrameRendererTest {
 
     @Test
     fun `sequential pipe renders complete without hanging`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }

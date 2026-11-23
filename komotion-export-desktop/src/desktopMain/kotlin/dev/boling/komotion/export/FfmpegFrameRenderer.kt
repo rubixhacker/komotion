@@ -17,7 +17,6 @@ import org.jetbrains.skia.EncodedImageFormat
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
 enum class FfmpegPreset {
@@ -276,14 +275,14 @@ class FfmpegFrameRenderer(
         try {
             coroutineScope {
                 // Drain FFmpeg's stdout/stderr to prevent pipe buffer deadlock.
-                val outputRef = AtomicReference<String>()
+                var output = ""
                 val stdoutDrain = launch(Dispatchers.IO) {
-                    outputRef.set(process.inputStream.bufferedReader().readText())
+                    output = process.inputStream.bufferedReader().readText()
                 }
                 val exitCode = waitForCancellationAware(process)
                 stdoutDrain.join()
                 if (exitCode != 0) {
-                    throw IllegalStateException("FFmpeg failed (exit $exitCode):\n${outputRef.get()}")
+                    throw IllegalStateException("FFmpeg failed (exit $exitCode):\n$output")
                 }
             }
         } finally {
