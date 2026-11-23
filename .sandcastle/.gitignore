@@ -2,3 +2,4 @@
 logs/
 worktrees/
 node_modules/
+issue-context-*.json

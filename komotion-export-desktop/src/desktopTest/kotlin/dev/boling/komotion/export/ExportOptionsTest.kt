@@ -231,12 +231,10 @@ class ExportOptionsTest {
             audioTracks = emptyList(),
             options = ExportOptions(metadata = mapOf("title" to "Demo", "artist" to "Komotion")),
         )
-        val first = command.indexOf("-metadata")
-        assertTrue(first >= 0, "Expected -metadata in $command")
-        assertEquals("title=Demo", command[first + 1])
-        val second = first + 2 + command.subList(first + 2, command.size).indexOf("-metadata")
-        assertTrue(second >= 0)
-        assertEquals("artist=Komotion", command[second + 1])
+        val metadataIndices = command.indices.filter { command[it] == "-metadata" }
+        assertEquals(2, metadataIndices.size, "Expected two -metadata args in $command")
+        assertEquals("title=Demo", command[metadataIndices[0] + 1])
+        assertEquals("artist=Komotion", command[metadataIndices[1] + 1])
     }
 
     // --- combined ---------------------------------------------------------------

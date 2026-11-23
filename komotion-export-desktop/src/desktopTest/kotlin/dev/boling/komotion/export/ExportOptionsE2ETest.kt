@@ -61,7 +61,6 @@ class ExportOptionsE2ETest {
 
         val composition = Composition(width = 160, height = 120, durationInFrames = 10, fps = 30)
         val content: @Composable () -> Unit = {
-            // One distinctive color per frame, so the order of exported frames is checkable.
             Box(Modifier.fillMaxSize().background(frameColors[currentFrame()]))
         }
 

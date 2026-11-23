@@ -72,10 +72,9 @@ class FfmpegFrameRenderer(
         val renderer = OffscreenRenderer(composition)
         try {
             val image = renderer.renderFrameImage(frame, content)
-            val format = if (File(outputPath).extension.lowercase() in setOf("jpg", "jpeg")) {
-                EncodedImageFormat.JPEG
-            } else {
-                EncodedImageFormat.PNG
+            val format = when (File(outputPath).extension.lowercase()) {
+                "jpg", "jpeg" -> EncodedImageFormat.JPEG
+                else -> EncodedImageFormat.PNG
             }
             val bytes = image.encodeToData(format)!!.bytes
             withContext(Dispatchers.IO) {
@@ -106,7 +105,7 @@ class FfmpegFrameRenderer(
         }
 
         val totalFrames = frames.size
-        val channel = Channel<Pair<Int, ByteArray>>(capacity = workerCount * 2)
+        val channel = Channel<ByteArray>(capacity = workerCount * 2)
 
         try {
             coroutineScope {
@@ -119,7 +118,7 @@ class FfmpegFrameRenderer(
                     try {
                         for ((index, frame) in frames.withIndex()) {
                             val bytes = renderer.renderFrameRaw(frame, content)
-                            channel.send(Pair(frame, bytes))
+                            channel.send(bytes)
                             onProgress(RenderProgress(RenderStage.Rendering, index + 1, totalFrames))
                             yield()
                         }
@@ -141,7 +140,7 @@ class FfmpegFrameRenderer(
 
                     try {
                         var written = 0
-                        for ((_, bytes) in channel) {
+                        for (bytes in channel) {
                             outputStream.write(bytes)
                             written++
                             onProgress(RenderProgress(RenderStage.Encoding, written, totalFrames))
@@ -166,13 +165,7 @@ class FfmpegFrameRenderer(
                 throw IllegalStateException("FFmpeg failed (exit $exitCode)")
             }
         } finally {
-            // NonCancellable: the cleanup must run even when the render was cancelled.
-            withContext(NonCancellable) {
-                process.inputStream.close()
-                process.outputStream.close()
-                process.errorStream.close()
-                process.destroyForcibly()
-            }
+            closeProcess(process)
         }
     }
 
@@ -200,9 +193,7 @@ class FfmpegFrameRenderer(
                 yield()
             }
             onProgress(RenderProgress(RenderStage.Encoding, frames.size, frames.size))
-            withContext(Dispatchers.IO) {
-                invokeFfmpeg(ffmpeg, tempDir, composition, outputPath, audioTracks, options)
-            }
+            invokeFfmpeg(ffmpeg, tempDir, composition, outputPath, audioTracks, options)
         } finally {
             renderer.close()
             // NonCancellable: the cleanup must run even when the render was cancelled.
@@ -292,19 +283,13 @@ class FfmpegFrameRenderer(
                     outputRef.set(process.inputStream.bufferedReader().readText())
                 }
                 val exitCode = waitForCancellationAware(process)
+                stdoutDrain.join()
                 if (exitCode != 0) {
                     throw IllegalStateException("FFmpeg failed (exit $exitCode):\n${outputRef.get()}")
                 }
-                stdoutDrain.join()
             }
         } finally {
-            // NonCancellable: the cleanup must run even when the render was cancelled.
-            withContext(NonCancellable) {
-                process.inputStream.close()
-                process.outputStream.close()
-                process.errorStream.close()
-                process.destroyForcibly()
-            }
+            closeProcess(process)
         }
     }
 
@@ -313,12 +298,25 @@ class FfmpegFrameRenderer(
      * process can be torn down when the render is cancelled.
      */
     private suspend fun waitForCancellationAware(process: Process): Int = withContext(Dispatchers.IO) {
-        while (true) {
-            val finished = process.waitFor(100, TimeUnit.MILLISECONDS)
-            if (finished) return@withContext process.exitValue()
+        while (!process.waitFor(100, TimeUnit.MILLISECONDS)) {
             delay(1) // Suspension point: throws if the job was cancelled.
         }
-        error("Unreachable")
+        process.exitValue()
+    }
+
+    /**
+     * Closes [process]'s streams and destroys it.
+     *
+     * Runs on [NonCancellable] so the cleanup happens even when the render
+     * was cancelled.
+     */
+    private suspend fun closeProcess(process: Process) {
+        withContext(NonCancellable) {
+            process.inputStream.close()
+            process.outputStream.close()
+            process.errorStream.close()
+            process.destroyForcibly()
+        }
     }
 
     /**
@@ -389,15 +387,14 @@ class FfmpegFrameRenderer(
         args += listOf("-i", if (piped) "pipe:0" else "frame%05d.png")
 
         val hasAudio = !options.muted && audioTracks.isNotEmpty()
+        val separateAudioTo = options.separateAudioTo
 
-        // Add each audio file as an input
         if (hasAudio) {
+            // Add each audio file as an input
             for (track in audioTracks) {
                 args += listOf("-i", track.file)
             }
-        }
 
-        if (hasAudio) {
             // Build filter_complex: delay each audio track to its start frame, then mix
             val filterParts = mutableListOf<String>()
             val mixInputs = mutableListOf<String>()
@@ -428,7 +425,7 @@ class FfmpegFrameRenderer(
 
         if (hasAudio) {
             args += listOf("-map", "0:v")
-            if (options.separateAudioTo == null) {
+            if (separateAudioTo == null) {
                 args += listOf("-map", "[aout]")
             }
         }
@@ -457,7 +454,6 @@ class FfmpegFrameRenderer(
         args += File(outputPath).absolutePath
 
         // Write the mixed audio to a separate file instead of muxing it into the video
-        val separateAudioTo = options.separateAudioTo
         if (hasAudio && separateAudioTo != null) {
             args += listOf("-map", "[aout]")
             args += listOf("-c:a", audioCodecFor(separateAudioTo))
