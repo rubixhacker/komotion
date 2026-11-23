@@ -8,10 +8,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import dev.boling.komotion.core.AudioTrack
 import dev.boling.komotion.core.Composition
+import dev.boling.komotion.core.RenderProgress
+import dev.boling.komotion.core.RenderStage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Collections
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -143,10 +146,7 @@ class FfmpegFrameRendererTest {
 
     @Test
     fun `renders composition to mp4 with default settings`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }
@@ -176,10 +176,7 @@ class FfmpegFrameRendererTest {
 
     @Test
     fun `renders composition to mp4 via pipe mode`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }
@@ -209,10 +206,7 @@ class FfmpegFrameRendererTest {
 
     @Test
     fun `renders composition to mp4 via PngSequence mode`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }
@@ -242,10 +236,7 @@ class FfmpegFrameRendererTest {
 
     @Test
     fun `pipe mode reports correct progress`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }
@@ -258,7 +249,9 @@ class FfmpegFrameRendererTest {
             Box(Modifier.fillMaxSize().background(Color.Red))
         }
 
-        val progressValues = mutableListOf<Int>()
+        // onProgress is invoked from the Main (rendering) and IO (writing)
+        // dispatchers concurrently, so collect it in a thread-safe list.
+        val progress = Collections.synchronizedList(mutableListOf<RenderProgress>())
 
         runBlocking {
             withContext(Dispatchers.Main) {
@@ -267,27 +260,26 @@ class FfmpegFrameRendererTest {
                     composition = composition,
                     outputPath = outputFile.absolutePath,
                     content = content,
-                    onProgress = { progressValues.add(it) },
+                    onProgress = { progress.add(it) },
                 )
             }
         }
 
-        // Should have reported progress for all 10 frames
-        assertEquals(10, progressValues.size, "Should report progress for each frame")
-        // Last progress value should equal total frames
-        assertEquals(10, progressValues.last(), "Final progress should equal total frames")
-        // Progress should be monotonically increasing
-        for (i in 1 until progressValues.size) {
-            assertTrue(progressValues[i] > progressValues[i - 1], "Progress should be monotonically increasing")
-        }
+        val rendering = progress.filter { it.stage == RenderStage.Rendering }
+        val encoding = progress.filter { it.stage == RenderStage.Encoding }
+        // One event per frame, in each stage
+        assertEquals(10, rendering.size, "Should report one Rendering event per frame")
+        assertEquals(10, encoding.size, "Should report one Encoding event per frame")
+        // Final progress in each stage should equal total frames
+        assertEquals(10, rendering.last().framesCompleted, "Final Rendering progress should equal total frames")
+        assertEquals(10, encoding.last().framesCompleted, "Final Encoding progress should equal total frames")
+        // Every event reports the total frame count
+        progress.forEach { assertEquals(10, it.totalFrames) }
     }
 
     @Test
     fun `sequential pipe renders complete without hanging`() {
-        val ffmpegAvailable = try {
-            ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-        } catch (e: Exception) { false }
-        if (!ffmpegAvailable) {
+        if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
         }
