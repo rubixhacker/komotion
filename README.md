@@ -550,7 +550,7 @@ includeBuild("/path/to/komotion") {
 The `sample-app` module is a player sandbox with demo compositions (FadeIn, TitleCard, BarChart, Loop, Freeze, Transition) and an MP4 export button. Run the desktop build:
 
 ```sh
-./gradlew :sample-app:desktopRun
+./gradlew :sample-app:run
 ```
 
 ## Releasing
