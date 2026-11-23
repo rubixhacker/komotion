@@ -72,7 +72,7 @@ val frame = currentFrame()                  // 0-based frame index
 val comp = LocalComposition.current         // width, height, fps, durationInFrames
 ```
 
-`LocalFrame` is the underlying composition local, read by `currentFrame()`. Use it directly only when you need the frame outside a composable context; otherwise prefer `currentFrame()`.
+`LocalFrame` is the underlying composition local that `currentFrame()` reads. Prefer `currentFrame()`; read `LocalFrame.current` directly only when you need the raw local (for example, to provide a different frame via `CompositionLocalProvider`).
 
 ### AbsoluteFill
 
@@ -224,9 +224,9 @@ Behavior is controlled with `InterpolateOptions`:
 ```kotlin
 InterpolateOptions(
     extrapolateLeft = ExtrapolateMode.clamp,   // clamp | extend | wrap | identity
-    extrapolateRight = ExtrapolateMode.clamp, // clamp is the default
-    posterize = 3,                            // quantize the input to a step (e.g. 3 = 10 fps at 30 fps)
-    easing = listOf(LinearEasing),            // one easing, or one per segment
+    extrapolateRight = ExtrapolateMode.clamp,  // clamp is the default
+    posterize = 3,                             // quantize the input to a step (e.g. 3 = 10 fps at 30 fps)
+    easing = listOf(LinearEasing),             // one easing, or one per segment
 )
 ```
 
