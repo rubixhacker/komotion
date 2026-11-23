@@ -19,6 +19,7 @@ Think [Remotion](https://www.remotion.dev/) — but for Kotlin and Compose.
 | `komotion-export-desktop` | Desktop (JVM) | MP4 export via FFmpeg with audio mixing and video frame extraction |
 | `komotion-theme` | Android, iOS, Desktop, wasmJs | Shared design tokens: `KomotionTheme` with colors, typography and shapes |
 | `komotion-algo-viz` | Android, iOS, Desktop, wasmJs | Algorithm visualizations for arrays, graphs, trees, stacks and queues |
+| `komotion-captions` | Android, iOS, Desktop, wasmJs | SRT/WebVTT caption parsing and a frame-driven `Caption` composable |
 
 ## Quick Start
 
