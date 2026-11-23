@@ -69,18 +69,19 @@ class FfmpegFrameRenderer(
         require(frame in 0 until composition.durationInFrames) {
             "Frame $frame is outside 0..${composition.durationInFrames - 1}"
         }
+        val output = File(outputPath)
         val renderer = OffscreenRenderer(composition)
         try {
             val image = renderer.renderFrameImage(frame, content)
-            val format = when (File(outputPath).extension.lowercase()) {
+            val format = when (output.extension.lowercase()) {
                 "jpg", "jpeg" -> EncodedImageFormat.JPEG
                 else -> EncodedImageFormat.PNG
             }
             val bytes = image.encodeToData(format)!!.bytes
             withContext(Dispatchers.IO) {
-                File(outputPath).writeBytes(bytes)
+                output.writeBytes(bytes)
             }
-            return File(outputPath)
+            return output
         } finally {
             renderer.close()
         }
