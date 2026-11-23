@@ -55,9 +55,9 @@ fun Preview() {
 suspend fun export() {
     val composition = Composition(width = 1920, height = 1080, durationInFrames = 60, fps = 30)
     val renderer = FfmpegFrameRenderer()
-    renderer.render(composition, "output.mp4") {
+    renderer.render(composition, "output.mp4", content = {
         HelloVideo()
-    }
+    })
 }
 ```
 
@@ -287,9 +287,9 @@ val audioTracks = listOf(
     AudioTrack(file = "/path/to/main.wav", startFrame = 90),
 )
 
-renderer.render(composition, "output.mp4", audioTracks = audioTracks) {
+renderer.render(composition, "output.mp4", audioTracks = audioTracks, content = {
     MyComposition()
-}
+})
 ```
 
 Audio is mixed via FFmpeg `adelay` + `amix` during export. Preview playback is silent.
@@ -330,12 +330,17 @@ fun Captions(captions: List<Caption>) {
             val frame = currentFrame()
             val opacity = interpolate(frame, 0..10, 0f..1f)
             AbsoluteFill {
-                Text(
-                    text = caption.text,
-                    color = Color.White.copy(alpha = opacity),
-                    fontSize = 24.sp,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                )
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Text(
+                        text = caption.text,
+                        color = Color.White.copy(alpha = opacity),
+                        fontSize = 24.sp,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
             }
         }
     }
@@ -392,9 +397,9 @@ val renderer = FfmpegFrameRenderer(
 )
 
 // Blocking:
-renderer.render(composition, "output.mp4") {
+renderer.render(composition, "output.mp4", content = {
     MyComposition()
-}
+})
 
 // Non-blocking: returns a RenderJob reporting progress, completion, failure and cancellation
 val job: RenderJob = renderer.renderAsync(
