@@ -49,9 +49,9 @@ class RenderJobCancellationTest {
             )
 
             // Let the render start and produce a few frames.
-            await({ job.progress.value.framesCompleted >= 3 })
+            awaitUntil({ job.progress.value.framesCompleted >= 3 })
             job.cancel()
-            assertTrue(await({ job.error.value != null }), "error should be reported after cancel")
+            assertTrue(awaitUntil({ job.error.value != null }), "error should be reported after cancel")
 
             // No new temp directories, no FFmpeg process for this output.
             assertEquals(before, komotionTempDirs(), "cancellation should not leave temp directories")
@@ -86,9 +86,9 @@ class RenderJobCancellationTest {
             )
 
             // Let the render start and produce a few frames.
-            await({ job.progress.value.framesCompleted >= 3 })
+            awaitUntil({ job.progress.value.framesCompleted >= 3 })
             job.cancel()
-            assertTrue(await({ job.error.value != null }), "error should be reported after cancel")
+            assertTrue(awaitUntil({ job.error.value != null }), "error should be reported after cancel")
 
             assertEquals(before, komotionTempDirs(), "cancellation should not leave temp directories")
             assertTrue(!ffmpegProcessExists(outputFile), "no FFmpeg process should reference the output")
@@ -96,7 +96,7 @@ class RenderJobCancellationTest {
     }
 
     /** Waits (up to 30s) for [condition] to become true. */
-    private suspend fun await(condition: () -> Boolean): Boolean {
+    private suspend fun awaitUntil(condition: () -> Boolean): Boolean {
         val start = System.currentTimeMillis()
         while (!condition()) {
             if (System.currentTimeMillis() - start > 30_000) return false

@@ -11,8 +11,8 @@ import androidx.compose.runtime.Composable
  * [outputPath] must be an absolute path string (using String avoids java.nio.Path
  * which is not available in commonMain).
  *
- * [onProgress] is called for every frame completed, in the [RenderStage.Rendering]
- * and [RenderStage.Encoding] stages.
+ * [onProgress] reports progress in the [RenderStage.Rendering] and
+ * [RenderStage.Encoding] stages.
  */
 interface FrameRenderer {
     suspend fun render(
