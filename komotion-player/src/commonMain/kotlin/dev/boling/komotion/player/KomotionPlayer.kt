@@ -8,6 +8,8 @@ import androidx.compose.ui.graphics.Color
 import dev.boling.komotion.core.Composition
 import dev.boling.komotion.core.LocalComposition
 import dev.boling.komotion.core.LocalFrame
+import dev.boling.komotion.media.LocalMediaCollector
+import dev.boling.komotion.media.MediaCollector
 import kotlinx.coroutines.delay
 import kotlin.time.TimeSource
 import kotlin.time.Duration.Companion.milliseconds
@@ -16,7 +18,9 @@ import kotlin.time.Duration.Companion.milliseconds
  * Embeds an animated composition with transport controls.
  *
  * The [content] composable reads [LocalFrame] to drive its animation.
- * [KomotionPlayer] injects both [LocalFrame] and [LocalComposition] before calling [content].
+ * [KomotionPlayer] injects [LocalFrame], [LocalComposition] and
+ * [LocalMediaCollector] before calling [content], so media declared in
+ * [content] is collected for preview and export alike.
  */
 @Composable
 fun KomotionPlayer(
@@ -25,6 +29,7 @@ fun KomotionPlayer(
     initialFrame: Int = 0,
     loop: Boolean = true,
     autoPlay: Boolean = false,
+    mediaCollector: MediaCollector = remember { MediaCollector() },
     content: @Composable () -> Unit,
 ) {
     var currentFrame by remember { mutableStateOf(initialFrame) }
@@ -60,9 +65,11 @@ fun KomotionPlayer(
         }
     }
 
+    mediaCollector.frame = currentFrame
     CompositionLocalProvider(
         LocalFrame provides currentFrame,
         LocalComposition provides composition,
+        LocalMediaCollector provides mediaCollector,
     ) {
         Column(modifier = modifier) {
             Box(

@@ -1,9 +1,13 @@
 package dev.boling.komotion.export
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import dev.boling.komotion.core.AudioTrack
 import dev.boling.komotion.core.Composition
 import dev.boling.komotion.core.FrameRenderer
+import dev.boling.komotion.media.AudioMedia
+import dev.boling.komotion.media.LocalMediaCollector
+import dev.boling.komotion.media.MediaCollector
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,9 +37,21 @@ class FfmpegFrameRenderer(
         audioTracks: List<AudioTrack>,
         onProgress: (framesRendered: Int) -> Unit,
     ) {
+        render(composition, outputPath, content, audioTracks, null, onProgress)
+    }
+
+    suspend fun render(
+        composition: Composition,
+        outputPath: String,
+        content: @Composable () -> Unit,
+        audioTracks: List<AudioTrack>,
+        mediaCollector: MediaCollector?,
+        onProgress: (framesRendered: Int) -> Unit,
+    ) {
+        val collector = mediaCollector ?: MediaCollector()
         when (renderMode) {
-            RenderMode.Pipe -> renderPiped(composition, outputPath, content, audioTracks, onProgress)
-            RenderMode.PngSequence -> renderPngSequence(composition, outputPath, content, audioTracks, onProgress)
+            RenderMode.Pipe -> renderPiped(composition, outputPath, content, audioTracks, collector, onProgress)
+            RenderMode.PngSequence -> renderPngSequence(composition, outputPath, content, audioTracks, collector, onProgress)
         }
     }
 
@@ -44,10 +60,27 @@ class FfmpegFrameRenderer(
         outputPath: String,
         content: @Composable () -> Unit,
         audioTracks: List<AudioTrack>,
+        collector: MediaCollector,
         onProgress: (framesRendered: Int) -> Unit,
     ) {
         val ffmpeg = resolveFfmpeg()
-        val command = buildPipeFfmpegCommand(ffmpeg, composition, outputPath, audioTracks)
+        val totalFrames = composition.durationInFrames
+        val contentWithCollector = provideCollector(content, collector)
+
+        // Pre-scan pass: compose every frame so the collector accumulates media
+        // declared in any sequence window before the FFmpeg command is built.
+        val renderer = OffscreenRenderer(composition)
+        try {
+            for (frame in 0 until totalFrames) {
+                collector.frame = frame
+                renderer.renderFrameRaw(frame, contentWithCollector)
+                yield()
+            }
+        } finally {
+            renderer.close()
+        }
+
+        val command = buildPipeFfmpegCommandWithInputs(ffmpeg, composition, outputPath, toAudioInputs(audioTracks, collector))
 
         val process = withContext(Dispatchers.IO) {
             ProcessBuilder(command)
@@ -55,7 +88,6 @@ class FfmpegFrameRenderer(
                 .start()
         }
 
-        val totalFrames = composition.durationInFrames
         val channel = Channel<Pair<Int, ByteArray>>(capacity = workerCount * 2)
 
         try {
@@ -68,7 +100,8 @@ class FfmpegFrameRenderer(
                     val renderer = OffscreenRenderer(composition)
                     try {
                         for (frame in 0 until totalFrames) {
-                            val bytes = renderer.renderFrameRaw(frame, content)
+                            collector.frame = frame
+                            val bytes = renderer.renderFrameRaw(frame, contentWithCollector)
                             channel.send(Pair(frame, bytes))
                             yield()
                         }
@@ -127,6 +160,7 @@ class FfmpegFrameRenderer(
         outputPath: String,
         content: @Composable () -> Unit,
         audioTracks: List<AudioTrack>,
+        collector: MediaCollector,
         onProgress: (framesRendered: Int) -> Unit,
     ) {
         val ffmpeg = resolveFfmpeg()
@@ -134,9 +168,11 @@ class FfmpegFrameRenderer(
             Files.createTempDirectory("komotion-").toFile()
         }
         val renderer = OffscreenRenderer(composition)
+        val contentWithCollector = provideCollector(content, collector)
         try {
             for (frame in 0 until composition.durationInFrames) {
-                val pngBytes = renderer.renderFrame(frame, content)
+                collector.frame = frame
+                val pngBytes = renderer.renderFrame(frame, contentWithCollector)
                 withContext(Dispatchers.IO) {
                     File(tempDir, "frame%05d.png".format(frame)).writeBytes(pngBytes)
                 }
@@ -144,7 +180,7 @@ class FfmpegFrameRenderer(
                 yield()
             }
             withContext(Dispatchers.IO) {
-                invokeFfmpeg(ffmpeg, tempDir, composition, outputPath, audioTracks)
+                invokeFfmpeg(ffmpeg, tempDir, composition, outputPath, toAudioInputs(audioTracks, collector))
             }
         } finally {
             renderer.close()
@@ -158,6 +194,7 @@ class FfmpegFrameRenderer(
         content: @Composable () -> Unit,
         scope: CoroutineScope,
         audioTracks: List<AudioTrack> = emptyList(),
+        mediaCollector: MediaCollector? = null,
     ): RenderJob {
         val progressFlow = MutableStateFlow(0)
         val isCompleteFlow = MutableStateFlow(false)
@@ -170,6 +207,7 @@ class FfmpegFrameRenderer(
                     outputPath = outputPath,
                     content = content,
                     audioTracks = audioTracks,
+                    mediaCollector = mediaCollector,
                     onProgress = { progressFlow.value = it },
                 )
                 isCompleteFlow.value = true
@@ -213,9 +251,9 @@ class FfmpegFrameRenderer(
         tempDir: File,
         composition: Composition,
         outputPath: String,
-        audioTracks: List<AudioTrack> = emptyList(),
+        audioInputs: List<AudioInput>,
     ) {
-        val command = buildFfmpegCommand(ffmpeg, composition, outputPath, audioTracks)
+        val command = buildFfmpegCommandWithInputs(ffmpeg, composition, outputPath, audioInputs)
         val process = ProcessBuilder(command)
             .directory(tempDir)
             .redirectErrorStream(true)
@@ -234,6 +272,15 @@ class FfmpegFrameRenderer(
         outputPath: String,
         audioTracks: List<AudioTrack>,
     ): List<String> {
+        return buildFfmpegCommandWithInputs(ffmpeg, composition, outputPath, audioTracks.map { AudioInput.from(it) })
+    }
+
+    internal fun buildFfmpegCommandWithInputs(
+        ffmpeg: String,
+        composition: Composition,
+        outputPath: String,
+        audioInputs: List<AudioInput>,
+    ): List<String> {
         val args = mutableListOf(
             ffmpeg, "-y",
             "-r", composition.fps.toString(),
@@ -241,28 +288,16 @@ class FfmpegFrameRenderer(
         )
 
         // Add each audio file as an input
-        for (track in audioTracks) {
-            args += listOf("-i", track.file)
+        for (input in audioInputs) {
+            args += listOf("-i", input.file)
         }
 
-        if (audioTracks.isNotEmpty()) {
-            // Build filter_complex: delay each audio track to its start frame, then mix
-            val filterParts = mutableListOf<String>()
-            val mixInputs = mutableListOf<String>()
-
-            for ((index, track) in audioTracks.withIndex()) {
-                val inputIndex = index + 1 // 0 is the video frames
-                val delayMs = track.startFrame * 1000L / composition.fps
-                val label = "a$index"
-                filterParts += "[$inputIndex:a]adelay=$delayMs|$delayMs[$label]"
-                mixInputs += "[$label]"
-            }
-
-            val mixFilter = "${mixInputs.joinToString("")}amix=inputs=${audioTracks.size}:duration=longest:dropout_transition=0:normalize=0[aout]"
-            val filterComplex = (filterParts + mixFilter).joinToString(";")
-
+        // Build filter_complex: trim, rate, delay each audio input to its start
+        // frame, apply volume, then mix
+        val (filterComplex, mapArgs) = buildAudioFilter(composition.fps, audioInputs)
+        if (filterComplex != null) {
             args += listOf("-filter_complex", filterComplex)
-            args += listOf("-map", "0:v", "-map", "[aout]")
+            args += mapArgs
         }
 
         args += listOf(
@@ -284,6 +319,15 @@ class FfmpegFrameRenderer(
         outputPath: String,
         audioTracks: List<AudioTrack>,
     ): List<String> {
+        return buildPipeFfmpegCommandWithInputs(ffmpeg, composition, outputPath, audioTracks.map { AudioInput.from(it) })
+    }
+
+    internal fun buildPipeFfmpegCommandWithInputs(
+        ffmpeg: String,
+        composition: Composition,
+        outputPath: String,
+        audioInputs: List<AudioInput>,
+    ): List<String> {
         val args = mutableListOf(
             ffmpeg, "-y",
             "-f", "rawvideo",
@@ -294,27 +338,14 @@ class FfmpegFrameRenderer(
         )
 
         // Add each audio file as an input
-        for (track in audioTracks) {
-            args += listOf("-i", track.file)
+        for (input in audioInputs) {
+            args += listOf("-i", input.file)
         }
 
-        if (audioTracks.isNotEmpty()) {
-            val filterParts = mutableListOf<String>()
-            val mixInputs = mutableListOf<String>()
-
-            for ((index, track) in audioTracks.withIndex()) {
-                val inputIndex = index + 1
-                val delayMs = track.startFrame * 1000L / composition.fps
-                val label = "a$index"
-                filterParts += "[$inputIndex:a]adelay=$delayMs|$delayMs[$label]"
-                mixInputs += "[$label]"
-            }
-
-            val mixFilter = "${mixInputs.joinToString("")}amix=inputs=${audioTracks.size}:duration=longest:dropout_transition=0:normalize=0[aout]"
-            val filterComplex = (filterParts + mixFilter).joinToString(";")
-
+        val (filterComplex, mapArgs) = buildAudioFilter(composition.fps, audioInputs)
+        if (filterComplex != null) {
             args += listOf("-filter_complex", filterComplex)
-            args += listOf("-map", "0:v", "-map", "[aout]")
+            args += mapArgs
         }
 
         args += listOf(
@@ -327,6 +358,67 @@ class FfmpegFrameRenderer(
         args += File(outputPath).absolutePath
 
         return args
+    }
+
+    /**
+     * Builds the FFmpeg audio filter graph for [audioInputs].
+     *
+     * Each input is trimmed (atrim), rate-adjusted (atempo), delayed to its
+     * start frame (adelay) and volume-adjusted (volume), then all inputs are
+     * mixed with amix. Returns null when there are no audio inputs.
+     */
+    private fun buildAudioFilter(
+        fps: Int,
+        audioInputs: List<AudioInput>,
+    ): Pair<String?, List<String>> {
+        if (audioInputs.isEmpty()) return null to emptyList()
+
+        val filterParts = mutableListOf<String>()
+        val mixInputs = mutableListOf<String>()
+
+        for ((index, input) in audioInputs.withIndex()) {
+            val inputIndex = index + 1 // 0 is the video frames
+            val label = "a$index"
+            val parts = mutableListOf<String>()
+
+            if (input.trimStartFrame > 0 || input.trimEndFrame != null) {
+                val start = input.trimStartFrame / fps.toDouble()
+                val end = input.trimEndFrame?.let { it / fps.toDouble() }
+                parts += "atrim=start=$start" + (end?.let { ":end=$it" } ?: "")
+            }
+            if (input.playbackRate != 1f) {
+                parts += "atempo=${input.playbackRate}"
+            }
+            val delayMs = input.startFrame * 1000L / fps
+            parts += "adelay=$delayMs|$delayMs"
+            if (input.muted || input.volume != 1f) {
+                parts += "volume=${if (input.muted) 0f else input.volume}"
+            }
+
+            filterParts += "[$inputIndex:a]${parts.joinToString(";")}[$label]"
+            mixInputs += "[$label]"
+        }
+
+        val mixFilter = "${mixInputs.joinToString("")}amix=inputs=${audioInputs.size}:duration=longest:dropout_transition=0:normalize=0[aout]"
+        val filterComplex = (filterParts + mixFilter).joinToString(";")
+
+        return filterComplex to listOf("-map", "0:v", "-map", "[aout]")
+    }
+
+    /** Combines explicitly passed [audioTracks] with audio collected from the composition. */
+    private fun toAudioInputs(audioTracks: List<AudioTrack>, collector: MediaCollector): List<AudioInput> {
+        val collected = collector.snapshot().filterIsInstance<AudioMedia>()
+        return audioTracks.map { AudioInput.from(it) } + collected.map { AudioInput.from(it) }
+    }
+
+    /** Wraps [content] so media composables register with [collector]. */
+    private fun provideCollector(
+        content: @Composable () -> Unit,
+        collector: MediaCollector,
+    ): @Composable () -> Unit = {
+        CompositionLocalProvider(LocalMediaCollector provides collector) {
+            content()
+        }
     }
 }
 
