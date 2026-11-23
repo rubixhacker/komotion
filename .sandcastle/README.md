@@ -90,10 +90,13 @@ The other knobs are environment variables with defaults in each entry point
 
 The gate compiles every target in every module, so the host needs the
 toolchains those targets build with: Xcode (iOS), and the Android SDK
-(Android — the command-line tools alone are not enough):
+(Android — the command-line tools alone are not enough). Install the
+platform the modules compile against (compileSdk 35) and the build-tools
+revision AGP defaults to (36.0.0 for AGP 9.5.2; a missing build-tools
+revision fails the Android compile):
 
 ```bash
-sdkmanager --install "platforms;35" "build-tools;35.0.0"
+sdkmanager --install "platforms;35" "build-tools;36.0.0"
 ```
 
 ## Logs
