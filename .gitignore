@@ -2,5 +2,6 @@
 build/
 .kotlin/
 local.properties
+android-sdk/
 .superpowers/
 docs/superpowers/
