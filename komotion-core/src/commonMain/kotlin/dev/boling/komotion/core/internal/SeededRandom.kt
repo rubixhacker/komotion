@@ -25,6 +25,6 @@ internal fun seededRandom(seed: String, frame: Int? = null): Random =
  * produces different streams for different frames.
  */
 internal fun seededRandom(seed: Long, frame: Int? = null): Random {
-    val combined = frame?.let { combineHash(seed, fnv1a64(it.toLong())) } ?: seed
+    val combined = if (frame == null) seed else combineHash(seed, fnv1a64(frame.toLong()))
     return Random(combined)
 }
