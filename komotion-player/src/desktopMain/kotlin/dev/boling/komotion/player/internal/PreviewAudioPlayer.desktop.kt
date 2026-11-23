@@ -2,7 +2,6 @@ package dev.boling.komotion.player.internal
 
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
-import javax.sound.sampled.Line
 import javax.sound.sampled.LineUnavailableException
 import javax.sound.sampled.SourceDataLine
 import java.io.File
@@ -75,7 +74,9 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
                     require(audioFormat == 1) { "Only 16-bit PCM WAV is supported for preview" }
                     require(bytesPerSample == 2) { "Only 16-bit samples are supported for preview" }
                     require(sampleRate > 0)
-                    lineFormat = AudioFormat(sampleRate.toFloat(), sampleRate, channels, true, false)
+                    // 16-bit PCM only; the 5-arg AudioFormat ctor is
+                    // (sampleRate, bitsPerSample, channels, signed, bigEndian).
+                    lineFormat = AudioFormat(sampleRate.toFloat(), 16, channels, true, false)
                     foundFormat = true
                 }
                 "data" -> {
@@ -92,16 +93,17 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
 
     /** Reads an unsigned little-endian 16-bit value at [offset]. */
     private fun ByteArray.uint16At(offset: Int): Int =
-        (this[offset].toInt() and 0xFF) + (this[offset + 1].toInt() and 0xFF) shl 8
+        (this[offset].toInt() and 0xFF) + ((this[offset + 1].toInt() and 0xFF) shl 8)
 
     /** Reads an unsigned little-endian 32-bit value at [offset]. */
     private fun ByteArray.uint32At(offset: Int): Int =
         (this[offset].toInt() and 0xFF) +
-            (this[offset + 1].toInt() and 0xFF) shl 8 +
-            (this[offset + 2].toInt() and 0xFF) shl 16 +
-            (this[offset + 3].toInt() and 0xFF) shl 24
+            ((this[offset + 1].toInt() and 0xFF) shl 8) +
+            ((this[offset + 2].toInt() and 0xFF) shl 16) +
+            ((this[offset + 3].toInt() and 0xFF) shl 24)
 
-    private var lineFormat: AudioFormat = AudioFormat(44100f, 44100, 1, true, false)
+    // 16-bit PCM; the 5-arg AudioFormat ctor is (sampleRate, bitsPerSample, channels, signed, bigEndian).
+    private var lineFormat: AudioFormat = AudioFormat(44100f, 16, 1, true, false)
 
     override fun seekTo(seconds: Double) {
         val framePosition = (seconds * sampleRate).toLong()
@@ -151,7 +153,10 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
         var i = 0
         var remaining = length
         while (remaining >= 2) {
-            val sample = (buffer[i].toInt() and 0xFF) + (buffer[i + 1].toInt() and 0xFF) shl 8
+            // Read the signed little-endian 16-bit sample: combine the bytes as
+            // an unsigned value, then wrap to a signed Short and sign-extend.
+            val unsigned = (buffer[i].toInt() and 0xFF) or ((buffer[i + 1].toInt() and 0xFF) shl 8)
+            val sample = unsigned.toShort().toInt()
             val scaled = (sample * gain).toInt().coerceIn(-32768, 32767)
             buffer[i] = (scaled and 0xFF).toByte()
             buffer[i + 1] = ((scaled shr 8) and 0xFF).toByte()
@@ -191,12 +196,15 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
     private fun ensureLine() {
         if (line != null) return
         try {
-            val info = AudioSystem.getSourceLineInfo(lineFormat as Line.Info)
-            val candidate = info as? SourceDataLine ?: return
+            val candidate = AudioSystem.getSourceDataLine(lineFormat)
             candidate.open(lineFormat, 8192)
             candidate.start()
             line = candidate
         } catch (e: LineUnavailableException) {
+            line = null
+        } catch (e: IllegalArgumentException) {
+            // No matching audio line (e.g. a headless environment with no
+            // audio device, or an unsupported format); preview stays silent.
             line = null
         }
     }
