@@ -28,6 +28,7 @@ internal class WasmPreviewAudioPlayer : PreviewAudioPlayer {
         audio?.currentTime = seconds
     }
 
+    @OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
     override fun play() {
         // play() returns a Promise; the result is not needed here.
         audio?.play()

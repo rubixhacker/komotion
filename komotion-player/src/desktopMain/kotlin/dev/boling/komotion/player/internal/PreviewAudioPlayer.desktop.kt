@@ -34,18 +34,31 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
 
     override fun load(file: String) {
         val bytes = File(file).takeIf { it.exists() }?.readBytes()
-        data = bytes
+        data = null
         if (bytes != null) {
-            parseWavHeader(bytes)
+            try {
+                parseWavHeader(bytes)
+                data = bytes
+            } catch (e: IllegalArgumentException) {
+                // Unsupported WAV format; preview stays silent.
+            }
         }
         position = dataOffset
     }
 
-    /** Minimal WAV header parse to locate the `data` chunk and the format. */
+    /**
+     * Minimal WAV header parse to locate the `data` chunk and the format.
+     *
+     * Throws [IllegalArgumentException] when the file is not a 16-bit PCM WAV
+     * the preview can play; [load] treats that as "silent".
+     */
     private fun parseWavHeader(bytes: ByteArray) {
-        if (bytes.size < 12) return
+        dataOffset = 0
+        dataLength = 0
+        require(bytes.size >= 12) { "File too small to be a WAV" }
         // RIFF header
-        if (bytes[0] != 'R'.code.toByte() || bytes[1] != 'I'.code.toByte()) return
+        require(bytes[0] == 'R'.code.toByte() && bytes[1] == 'I'.code.toByte()) { "Not a RIFF file" }
+        var foundFormat = false
         // Walk chunks to find the format and data chunks.
         var index = 12
         while (index + 8 <= bytes.size) {
@@ -63,15 +76,15 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
                         (bytes[index + 13].toInt() and 0xFF) shl 8 +
                         (bytes[index + 14].toInt() and 0xFF) shl 16 +
                         (bytes[index + 15].toInt() and 0xFF) shl 24
-                    val bitsPerSample = (bytes[index + 16].toInt() and 0xFF) +
-                        (bytes[index + 17].toInt() and 0xFF) shl 8
+                    val bitsPerSample = (bytes[index + 22].toInt() and 0xFF) +
+                        (bytes[index + 23].toInt() and 0xFF) shl 8
                     bytesPerSample = bitsPerSample / 8
-                    // audioFormat is used to confirm PCM; we assume 16-bit PCM.
+                    // Only 16-bit PCM is supported for preview.
                     require(audioFormat == 1) { "Only 16-bit PCM WAV is supported for preview" }
                     require(bytesPerSample == 2) { "Only 16-bit samples are supported for preview" }
                     require(sampleRate > 0)
-                    // fmt is parsed; keep the format for the line.
                     lineFormat = AudioFormat(sampleRate.toFloat(), sampleRate, channels, true, false)
+                    foundFormat = true
                 }
                 "data" -> {
                     dataOffset = (index + 8).toLong()
@@ -81,11 +94,8 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
             index += 8 + chunkSize
             if (chunkSize and 1 == 1) index++ // data chunks are padded to even size
         }
-        if (dataOffset == 0L) {
-            // No data chunk found; fall back to the format we have.
-            dataOffset = 0
-            dataLength = bytes.size.toLong()
-        }
+        require(foundFormat) { "No fmt chunk found" }
+        require(dataOffset > 0L) { "No data chunk found" }
     }
 
     private var lineFormat: AudioFormat = AudioFormat(44100f, 44100, 1, true, false)
@@ -100,8 +110,15 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
 
     override fun play() {
         if (playing || data == null) return
+        // Already at the end of the file; stop() resets this.
+        if (position >= dataOffset + dataLength) return
         playing = true
         ensureLine()
+        // A previous thread may still be draining the line's buffer after a
+        // pause; it will see playing == true and resume, so do not start a
+        // second writer.
+        val old = thread
+        if (old != null && old.isAlive) return
         thread = thread(name = "komotion-preview-audio") {
             playLoop()
         }
@@ -117,13 +134,10 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
             if (muted || volume < 1f) {
                 applyGain(buffer, toRead)
             }
+            // The blocking write paces playback: the line's buffer holds the
+            // data until the audio hardware consumes it at real-time speed.
             line?.write(buffer, 0, toRead.toInt())
             position += toRead
-            try {
-                Thread.sleep(10)
-            } catch (e: InterruptedException) {
-                break
-            }
         }
         playing = false
     }
@@ -145,8 +159,9 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
 
     override fun pause() {
         playing = false
+        // Keep the thread reference: play() checks isAlive so a second
+        // writer is not started while the old thread is still draining.
         thread?.interrupt()
-        thread = null
     }
 
     override fun stop() {
