@@ -180,7 +180,7 @@ class FfmpegFrameRenderer(
         val ffmpeg = resolveFfmpeg()
         val renderer = OffscreenRenderer(composition)
         try {
-            val tempDir = Files.createTempDirectory("komotion-").toFile()
+            val tempDir = withContext(Dispatchers.IO) { Files.createTempDirectory("komotion-").toFile() }
             try {
                 for ((index, frame) in frames.withIndex()) {
                     val pngBytes = renderer.renderFrame(frame, content)
