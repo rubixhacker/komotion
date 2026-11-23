@@ -5,6 +5,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -138,5 +139,45 @@ class RandomTest {
                 "per-frame value out of range: $value"
             )
         }
+    }
+
+    @Test
+    fun `empty int range is rejected with IllegalArgumentException`() {
+        val empty = 10..9
+        val stringError = assertFailsWith<IllegalArgumentException> { randomInRange("seed-1", empty) }
+        assertTrue(stringError.message.orEmpty().contains("must not be empty"), "unexpected message: ${stringError.message}")
+        val longError = assertFailsWith<IllegalArgumentException> { randomInRange(42L, empty) }
+        assertTrue(longError.message.orEmpty().contains("must not be empty"), "unexpected message: ${longError.message}")
+    }
+
+    @Test
+    fun `empty float range is rejected with IllegalArgumentException`() {
+        val empty = 5.0f..1.0f
+        val stringError = assertFailsWith<IllegalArgumentException> { randomInRange("seed-1", empty) }
+        assertTrue(stringError.message.orEmpty().contains("must not be empty"), "unexpected message: ${stringError.message}")
+        val longError = assertFailsWith<IllegalArgumentException> { randomInRange(42L, empty) }
+        assertTrue(longError.message.orEmpty().contains("must not be empty"), "unexpected message: ${longError.message}")
+    }
+
+    @Test
+    fun `empty range is rejected for per-frame overloads`() = runComposeUiTest {
+        val emptyInt = 10..9
+        val emptyFloat = 5.0f..1.0f
+        setContent {
+            CompositionLocalProvider(LocalFrame provides 42) {
+                assertFailsWith<IllegalArgumentException> { randomInRangePerFrame("seed-1", emptyInt) }
+                assertFailsWith<IllegalArgumentException> { randomInRangePerFrame(42L, emptyInt) }
+                assertFailsWith<IllegalArgumentException> { randomInRangePerFrame("seed-1", emptyFloat) }
+                assertFailsWith<IllegalArgumentException> { randomInRangePerFrame(42L, emptyFloat) }
+            }
+        }
+    }
+
+    @Test
+    fun `single-point ranges return the single value`() {
+        assertEquals(5, randomInRange("seed-1", 5..5))
+        assertEquals(5, randomInRange(42L, 5..5))
+        assertEquals(1.0f, randomInRange("seed-1", 1.0f..1.0f))
+        assertEquals(1.0f, randomInRange(42L, 1.0f..1.0f))
     }
 }
