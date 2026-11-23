@@ -17,49 +17,32 @@ sealed interface Media {
 
     /** Frame at which this media starts on the global timeline. */
     val startFrame: Int
-
-    /** Volume multiplier: 0f = silent, 1f = full volume. */
-    val volume: Float
-
-    /** Playback rate: 1f = normal speed, 2f = twice as fast. */
-    val playbackRate: Float
-
-    /** Frames skipped at the beginning of the file. */
-    val trimStartFrame: Int
-
-    /** Frame position in the file where the media ends; null = play to the end. */
-    val trimEndFrame: Int?
-
-    /** Whether the media is muted. */
-    val muted: Boolean
 }
 
+/** An audio file to be mixed into the exported output. */
 data class AudioMedia(
     override val file: String,
     override val startFrame: Int = 0,
-    override val volume: Float = 1f,
-    override val playbackRate: Float = 1f,
-    override val trimStartFrame: Int = 0,
-    override val trimEndFrame: Int? = null,
-    override val muted: Boolean = false,
+    /** Volume multiplier: 0f = silent, 1f = full volume. */
+    val volume: Float = 1f,
+    /** Playback rate: 1f = normal speed, 2f = twice as fast. */
+    val playbackRate: Float = 1f,
+    /** Frames skipped at the beginning of the file. */
+    val trimStartFrame: Int = 0,
+    /** Frame position in the file where the audio ends; null = play to the end. */
+    val trimEndFrame: Int? = null,
+    /** Whether the audio is muted. */
+    val muted: Boolean = false,
 ) : Media
 
+/** A video file to be embedded in the composition. */
 data class VideoMedia(
     override val file: String,
     override val startFrame: Int = 0,
-    override val volume: Float = 1f,
-    override val playbackRate: Float = 1f,
-    override val trimStartFrame: Int = 0,
-    override val trimEndFrame: Int? = null,
-    override val muted: Boolean = false,
 ) : Media
 
+/** An image file used by the composition. */
 data class ImageMedia(
     override val file: String,
     override val startFrame: Int = 0,
-    override val volume: Float = 1f,
-    override val playbackRate: Float = 1f,
-    override val trimStartFrame: Int = 0,
-    override val trimEndFrame: Int? = null,
-    override val muted: Boolean = false,
 ) : Media
