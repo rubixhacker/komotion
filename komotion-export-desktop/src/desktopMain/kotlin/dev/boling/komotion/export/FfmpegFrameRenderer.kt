@@ -290,30 +290,7 @@ class FfmpegFrameRenderer(
             "-r", composition.fps.toString(),
             "-i", "frame%05d.png",
         )
-
-        // Add each audio file as an input
-        for (input in audioInputs) {
-            args += listOf("-i", input.file)
-        }
-
-        // Build filter_complex: trim, rate, delay each audio input to its start
-        // frame, apply volume, then mix
-        val (filterComplex, mapArgs) = buildAudioFilter(composition.fps, audioInputs)
-        if (filterComplex.isNotEmpty()) {
-            args += listOf("-filter_complex", filterComplex)
-            args += mapArgs
-        }
-
-        args += listOf(
-            "-vcodec", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-crf", crf.toString(),
-            "-preset", preset.toFfmpegArg(),
-        )
-
-        // Ensure absolute output path
-        args += File(outputPath).absolutePath
-
+        appendAudioAndEncodingArgs(args, composition, audioInputs, outputPath)
         return args
     }
 
@@ -340,12 +317,28 @@ class FfmpegFrameRenderer(
             "-r", composition.fps.toString(),
             "-i", "pipe:0",
         )
+        appendAudioAndEncodingArgs(args, composition, audioInputs, outputPath)
+        return args
+    }
 
+    /**
+     * Appends the audio inputs, the audio filter graph, the video encoding
+     * arguments and the output path to [args]. Shared by the PNG-sequence and
+     * pipe command builders, which differ only in their video input prefix.
+     */
+    private fun appendAudioAndEncodingArgs(
+        args: MutableList<String>,
+        composition: Composition,
+        audioInputs: List<AudioInput>,
+        outputPath: String,
+    ) {
         // Add each audio file as an input
         for (input in audioInputs) {
             args += listOf("-i", input.file)
         }
 
+        // Build filter_complex: trim, rate, delay each audio input to its start
+        // frame, apply volume, then mix
         val (filterComplex, mapArgs) = buildAudioFilter(composition.fps, audioInputs)
         if (filterComplex.isNotEmpty()) {
             args += listOf("-filter_complex", filterComplex)
@@ -359,9 +352,8 @@ class FfmpegFrameRenderer(
             "-preset", preset.toFfmpegArg(),
         )
 
+        // Ensure absolute output path
         args += File(outputPath).absolutePath
-
-        return args
     }
 
     /**
