@@ -1,7 +1,7 @@
 package dev.boling.komotion.captions
 
-private val timestampToken = "(?:\\d{1,2}:)?\\d{1,2}:\\d{2}[,.]\\d{1,9}"
-private val timestampLineRegex = Regex("^\\s*($timestampToken)\\s+-->\\s+($timestampToken)\\s*$")
+private val timestampPattern = "(?:\\d{1,2}:)?\\d{1,2}:\\d{2}[,.]\\d{1,9}"
+private val timestampLineRegex = Regex("^\\s*($timestampPattern)\\s+-->\\s+($timestampPattern)\\s*$")
 private val identifierLineRegex = Regex("^\\s*\\d+\\s*$")
 
 /**
@@ -87,7 +87,7 @@ private fun parseBlock(
     if (isIdentifierLine(lines[i])) {
         identifier = lines[i].trim()
         i++
-        require(i < lines.size && isTimestampLine(lines[i])) {
+        require(i < lines.size) {
             "cue $identifier has no timestamp line"
         }
     } else if (requireIdentifier) {
