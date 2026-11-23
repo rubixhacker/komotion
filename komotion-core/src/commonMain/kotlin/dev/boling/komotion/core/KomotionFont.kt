@@ -8,8 +8,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.font.FontFamily
 
 /**
- * The [FontFamily] provided by the nearest enclosing [komotionFont], or
- * [FontFamily.Default] when the content is not inside a [komotionFont].
+ * The [FontFamily] provided by the nearest enclosing [KomotionFont], or
+ * [FontFamily.Default] when the content is not inside a [KomotionFont].
  */
 val LocalFontFamily: ProvidableCompositionLocal<FontFamily> = staticCompositionLocalOf { FontFamily.Default }
 
@@ -19,14 +19,14 @@ val LocalFontFamily: ProvidableCompositionLocal<FontFamily> = staticCompositionL
  * Children read [LocalFontFamily] and pass it to their text:
  *
  * ```
- * komotionFont(asset) {
+ * KomotionFont(asset) {
  *     Text("Hello", fontFamily = LocalFontFamily.current)
  * }
  * ```
  */
 @ExperimentalKomotionApi
 @Composable
-fun komotionFont(
+fun KomotionFont(
     asset: FontAsset,
     content: @Composable () -> Unit,
 ) {

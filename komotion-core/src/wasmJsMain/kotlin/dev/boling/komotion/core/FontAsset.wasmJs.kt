@@ -17,7 +17,7 @@ actual class FontAsset actual constructor(path: String) {
 
 // The font is loaded with a synchronous XMLHttpRequest: the browser main thread
 // is the only place a font URL can be read without suspending, and a
-// FontAsset must be fully loaded before komotionFont can provide its
+// FontAsset must be fully loaded before KomotionFont can provide its
 // FontFamily. A failed request (network error, 404, ...) throws instead of
 // falling back to a system font.
 private fun loadFontData(path: String): ByteArray {
@@ -27,10 +27,10 @@ private fun loadFontData(path: String): ByteArray {
         xhr.responseType = "arraybuffer"
         xhr.send()
     } catch (e: Throwable) {
-        throw IllegalArgumentException("Font file not found: $path", e)
+        throw IllegalArgumentException("Failed to load font: $path", e)
     }
     if (xhr.status != 200) {
-        throw IllegalArgumentException("Font file not found: $path (HTTP ${xhr.status})")
+        throw IllegalArgumentException("Failed to load font: $path (HTTP ${xhr.status})")
     }
     val data = arrayBufferToByteArray(xhr.response)
     requireFontData(path, data)
@@ -39,8 +39,9 @@ private fun loadFontData(path: String): ByteArray {
 
 private fun arrayBufferToByteArray(buffer: JsAny): ByteArray {
     val view = DataView(buffer)
-    val bytes = ByteArray(view.byteLength)
-    for (i in 0 until view.byteLength) {
+    val size = view.byteLength
+    val bytes = ByteArray(size)
+    for (i in 0 until size) {
         bytes[i] = view.getInt8(i).toByte()
     }
     return bytes

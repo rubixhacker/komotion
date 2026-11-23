@@ -8,6 +8,7 @@ import androidx.compose.ui.text.font.createFontFamilyResolver
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -20,18 +21,18 @@ class KomotionFontTest {
     fun `provides the font family to the subtree`() = runComposeUiTest {
         var observed: FontFamily? = null
         setContent {
-            komotionFont(testFont) {
+            KomotionFont(testFont) {
                 observed = LocalFontFamily.current
             }
         }
         assertNotNull(observed)
         assertTrue(observed !== FontFamily.Default)
-        val fonts = (observed as FontListFontFamily).fonts
+        val fonts = assertIs<FontListFontFamily>(observed).fonts
         assertEquals(1, fonts.size)
     }
 
     @Test
-    fun `defaults to the system font family outside komotionFont`() = runComposeUiTest {
+    fun `defaults to the system font family outside KomotionFont`() = runComposeUiTest {
         var observed: FontFamily? = null
         setContent {
             observed = LocalFontFamily.current
@@ -47,13 +48,13 @@ class KomotionFontTest {
     }
 
     @Test
-    fun `a nested komotionFont provides its own family`() = runComposeUiTest {
+    fun `a nested KomotionFont provides its own family`() = runComposeUiTest {
         var inner: FontFamily? = null
         var outer: FontFamily? = null
         setContent {
-            komotionFont(testFont) {
+            KomotionFont(testFont) {
                 outer = LocalFontFamily.current
-                komotionFont(testFont) {
+                KomotionFont(testFont) {
                     inner = LocalFontFamily.current
                 }
             }
