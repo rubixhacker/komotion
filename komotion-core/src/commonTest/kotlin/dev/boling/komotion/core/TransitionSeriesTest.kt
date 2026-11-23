@@ -2,25 +2,16 @@ package dev.boling.komotion.core
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 @OptIn(ExperimentalTestApi::class, ExperimentalKomotionApi::class)
 class TransitionSeriesTest {
-
-    @Test
-    fun `total duration is sum of scene durations minus overlaps`() {
-        val scope = TransitionScope()
-        scope.Scene(40) { }
-        scope.Fade(durationInFrames = 10)
-        scope.Scene(30) { }
-        assertEquals(60, scope.totalDurationInFrames)
-    }
 
     @Test
     fun `scene before the overlap receives local frame offset from its start`() = runComposeUiTest {

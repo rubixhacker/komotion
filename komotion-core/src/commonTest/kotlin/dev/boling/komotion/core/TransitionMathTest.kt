@@ -40,6 +40,17 @@ class TransitionMathTest {
     }
 
     @Test
+    fun `consecutive scenes without a transition run back-to-back`() {
+        val scope = TransitionScope()
+        scope.Scene(40) { }
+        scope.Scene(30) { }
+        val timeline = TransitionTimeline(scope.items)
+        assertEquals(listOf(0, 40), timeline.scenes.map { it.startFrame })
+        assertEquals(0, timeline.transitions.size)
+        assertEquals(70, scope.totalDurationInFrames)
+    }
+
+    @Test
     fun `timeline places scenes and transition on overlap frames`() {
         val scope = TransitionScope()
         scope.Scene(40) { }
@@ -93,6 +104,16 @@ class TransitionMathTest {
         scope.Wipe(durationInFrames = 10)
         scope.Scene(40) { }
         assertFailsWith<IllegalArgumentException> { TransitionTimeline(scope.items) }
+    }
+
+    @Test
+    fun `non-positive transition duration is rejected`() {
+        assertFailsWith<IllegalArgumentException> {
+            val scope = TransitionScope()
+            scope.Scene(40) { }
+            scope.Fade(durationInFrames = 0)
+            scope.Scene(30) { }
+        }
     }
 
     @Test

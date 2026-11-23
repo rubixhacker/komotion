@@ -144,7 +144,8 @@ internal fun Transition.frame(progress: Float): TransitionFrame = when (this) {
             else -> 0f
         }
         // The `+ 0f` normalizes IEEE negative zero to positive zero, so offsets
-        // compare equal at the overlap boundaries.
+        // compare equal at the overlap boundaries (data-class Float equality
+        // distinguishes -0.0f from 0.0f).
         TransitionFrame(
             outgoingAlpha = 1f,
             incomingAlpha = 1f,

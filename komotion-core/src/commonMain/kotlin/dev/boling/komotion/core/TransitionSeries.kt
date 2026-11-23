@@ -92,7 +92,7 @@ class TransitionScope {
 
     /** A cross-fade between the surrounding scenes. */
     fun Fade(durationInFrames: Int, easing: Easing = LinearEasing) {
-        items.add(TransitionItem(FadeTransition(durationInFrames, easing)))
+        addTransition(FadeTransition(durationInFrames, easing))
     }
 
     /** A slide between the surrounding scenes. */
@@ -101,7 +101,7 @@ class TransitionScope {
         easing: Easing = LinearEasing,
         direction: TransitionDirection = TransitionDirection.LeftToRight,
     ) {
-        items.add(TransitionItem(SlideTransition(durationInFrames, easing, direction)))
+        addTransition(SlideTransition(durationInFrames, easing, direction))
     }
 
     /** A wipe between the surrounding scenes. */
@@ -110,12 +110,12 @@ class TransitionScope {
         easing: Easing = LinearEasing,
         direction: TransitionDirection = TransitionDirection.LeftToRight,
     ) {
-        items.add(TransitionItem(WipeTransition(durationInFrames, easing, direction)))
+        addTransition(WipeTransition(durationInFrames, easing, direction))
     }
 
     /** An iris reveal between the surrounding scenes. */
     fun Iris(durationInFrames: Int, easing: Easing = LinearEasing) {
-        items.add(TransitionItem(IrisTransition(durationInFrames, easing)))
+        addTransition(IrisTransition(durationInFrames, easing))
     }
 
     /** A clock-wipe reveal between the surrounding scenes. */
@@ -125,7 +125,14 @@ class TransitionScope {
         startAngleDegrees: Float = -90f,
         clockwise: Boolean = true,
     ) {
-        items.add(TransitionItem(ClockWipeTransition(durationInFrames, easing, startAngleDegrees, clockwise)))
+        addTransition(ClockWipeTransition(durationInFrames, easing, startAngleDegrees, clockwise))
+    }
+
+    private fun addTransition(transition: Transition) {
+        require(transition.durationInFrames > 0) {
+            "Transition duration must be positive, was ${transition.durationInFrames}"
+        }
+        items.add(TransitionItem(transition))
     }
 
     /**
@@ -186,30 +193,34 @@ internal class TransitionTimeline(items: List<TimelineItem>) {
         val scenes = mutableListOf<PlacedScene>()
         val transitions = mutableListOf<PlacedTransition>()
         var base = 0
-        var pendingOutgoing: PlacedScene? = null
-        var pendingTransition: Transition? = null
-        var pendingStart = 0
-        var pendingDuration = 0
+        var previousScene: PlacedScene? = null
+        var pendingTransition: PendingTransition? = null
         for (item in items) {
             when (item) {
                 is SceneItem -> {
-                    val outgoing = pendingOutgoing
                     val scene = PlacedScene(base, item.durationInFrames, item.content)
-                    if (outgoing != null) {
-                        val t = pendingTransition!!
-                        val d = pendingDuration
-                        require(item.durationInFrames >= d) {
-                            "A $d-frame transition cannot overlap more frames than the ${item.durationInFrames}-frame scene after it"
+                    val pending = pendingTransition
+                    if (pending != null) {
+                        require(item.durationInFrames >= pending.transition.durationInFrames) {
+                            "A ${pending.transition.durationInFrames}-frame transition cannot overlap more frames than the ${item.durationInFrames}-frame scene after it"
                         }
-                        transitions.add(PlacedTransition(pendingStart, d, t, outgoing, scene))
+                        transitions.add(
+                            PlacedTransition(
+                                startFrame = pending.startFrame,
+                                durationInFrames = pending.transition.durationInFrames,
+                                transition = pending.transition,
+                                outgoing = pending.outgoing,
+                                incoming = scene,
+                            )
+                        )
                         pendingTransition = null
                     }
-                    pendingOutgoing = scene
+                    previousScene = scene
                     scenes.add(scene)
                     base = scene.endFrame
                 }
                 is TransitionItem -> {
-                    val outgoing = pendingOutgoing ?: throw IllegalArgumentException(
+                    val outgoing = previousScene ?: throw IllegalArgumentException(
                         "A transition must follow a scene in a TransitionSeries"
                     )
                     require(pendingTransition == null) {
@@ -219,9 +230,7 @@ internal class TransitionTimeline(items: List<TimelineItem>) {
                     require(start >= outgoing.startFrame) {
                         "A ${item.transition.durationInFrames}-frame transition cannot overlap more frames than the ${outgoing.durationInFrames}-frame scene before it"
                     }
-                    pendingTransition = item.transition
-                    pendingStart = start
-                    pendingDuration = item.transition.durationInFrames
+                    pendingTransition = PendingTransition(outgoing, item.transition, start)
                     base = start
                 }
             }
@@ -235,6 +244,13 @@ internal class TransitionTimeline(items: List<TimelineItem>) {
     }
 }
 
+/** A transition waiting for the scene that follows it. */
+private class PendingTransition(
+    val outgoing: PlacedScene,
+    val transition: Transition,
+    val startFrame: Int,
+)
+
 @Composable
 private fun SceneView(scene: PlacedScene, globalFrame: Int) {
     TransitionBox {
@@ -245,27 +261,27 @@ private fun SceneView(scene: PlacedScene, globalFrame: Int) {
 }
 
 @Composable
-private fun TransitionView(transition: PlacedTransition, globalFrame: Int) {
+private fun TransitionView(placed: PlacedTransition, globalFrame: Int) {
     val progress = transitionProgress(
         frame = globalFrame,
-        startFrame = transition.startFrame,
-        duration = transition.durationInFrames,
-        easing = transition.transition.easing,
+        startFrame = placed.startFrame,
+        duration = placed.durationInFrames,
+        easing = placed.transition.easing,
     )
-    val frame = transition.transition.frame(progress)
-    TransitionBox(clip = true) {
+    val transitionFrame = placed.transition.frame(progress)
+    TransitionBox(clipBounds = true) {
         TransitionScene(
-            scene = transition.outgoing,
+            scene = placed.outgoing,
             globalFrame = globalFrame,
-            alpha = frame.outgoingAlpha,
-            offset = frame.outgoingOffset,
+            alpha = transitionFrame.outgoingAlpha,
+            offset = transitionFrame.outgoingOffset,
         )
         TransitionScene(
-            scene = transition.incoming,
+            scene = placed.incoming,
             globalFrame = globalFrame,
-            alpha = frame.incomingAlpha,
-            offset = frame.incomingOffset,
-            clip = frame.clip,
+            alpha = transitionFrame.incomingAlpha,
+            offset = transitionFrame.incomingOffset,
+            clip = transitionFrame.clip,
         )
     }
 }
@@ -300,10 +316,10 @@ private fun TransitionScene(
 @Composable
 private fun TransitionBox(
     modifier: Modifier = Modifier,
-    clip: Boolean = false,
+    clipBounds: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val effectiveModifier = if (clip) modifier.clipToBounds() else modifier
+    val effectiveModifier = if (clipBounds) modifier.clipToBounds() else modifier
     Layout(content = content, modifier = effectiveModifier) { measurables, constraints ->
         val placeables = measurables.map { it.measure(constraints) }
         val width = placeables.maxOfOrNull { it.width } ?: 0
@@ -346,8 +362,7 @@ private class IrisClipShape(private val progress: Float) : Shape {
         val cx = size.width / 2f
         val cy = size.height / 2f
         val oval = Rect(cx - radius, cy - radius, cx + radius, cy + radius)
-        val path = Path().apply { addOval(oval) }
-        return Outline.Generic(path)
+        return Outline.Generic(Path().apply { addOval(oval) })
     }
 }
 
