@@ -152,6 +152,35 @@ function claimedIssues(): Set<number> {
   return claimed;
 }
 
+/**
+ * The branch carries work that has never been delivered: commits ahead of
+ * origin/main, and no merged pull request for the branch. The merged-PR
+ * check is what makes this safe after a squash merge, which leaves the
+ * branch's commits ahead of main even after delivery.
+ */
+function branchHasUndeliveredWork(branch: string): boolean {
+  const merged = ghJson<{ headRefName: string }[]>([
+    "pr",
+    "list",
+    "--repo",
+    config.GITHUB_REPO,
+    "--state",
+    "merged",
+    "--json",
+    "headRefName",
+  ]);
+  if (merged.some((pr) => pr.headRefName === branch)) return false;
+  let count: string;
+  try {
+    count = execFileSync("git", ["-C", root, "rev-list", "--count", `origin/main..${branch}`], {
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return false;
+  }
+  return Number(count) > 0;
+}
+
 // ---------------------------------------------------------------------------
 // Strike ledger: .sandcastle/logs/strikes.json (gitignored)
 // ---------------------------------------------------------------------------
@@ -315,7 +344,6 @@ async function main(): Promise<void> {
   // stay mergeable as main moves), and merge the ones whose CI is green.
   // These run on every pass, even when there is no new work.
   rebaseOpenPrs();
-  mergeGreenPrs();
 
   const queue = fetchQueue();
   const claimed = claimedIssues();
@@ -474,10 +502,17 @@ async function workTicket(
     failure = `agent run failed: ${String(error)}`;
   }
 
+  // A previous attempt may have committed work to the branch already
+  // (an earlier pass that failed at the gate or delivery). If the
+  // implementer made no new commits but the branch carries work that has
+  // never been delivered, that work is still deliverable: gate it and
+  // push it.
+  const hasWork = failure === null && (commits.length > 0 || branchHasUndeliveredWork(branch));
+
   // The quality gate is run by the orchestrator, not the agent: an agent
   // never gets to say "tests pass".
   let gateFailed = false;
-  if (failure === null && commits.length > 0) {
+  if (hasWork) {
     try {
       const gate = execFileSync(config.GATE_COMMAND.split(" ")[0], config.GATE_COMMAND.split(" ").slice(1), {
         cwd: sandbox.worktreePath,
@@ -505,7 +540,7 @@ async function workTicket(
     });
   }
 
-  if (failure === null && commits.length > 0) {
+  if (failure === null && hasWork) {
     try {
       deliver(issue, branch);
       clearStrike(issue.number);
@@ -514,6 +549,12 @@ async function workTicket(
     } catch (error) {
       failure = `delivery failed: ${String(error)}`;
     }
+  }
+
+  // The implementer produced nothing and the branch carries no undelivered
+  // work: a failed attempt, not a silent no-op.
+  if (failure === null) {
+    failure = "no commits";
   }
 
   // A failed attempt collects a strike; at the limit the ticket is handed to
@@ -582,6 +623,14 @@ function deliver(issue: QueueIssue, branch: string): void {
       `Closes #${issue.number}`,
     ].join("\n"),
   ]);
+  // GitHub's native auto-merge closes the pull request as soon as CI is
+  // green and there is no conflict, so no pass needs to merge it.
+  const prNumber = url.trim().split("/").pop() ?? "";
+  try {
+    gh(["pr", "merge", prNumber, "--auto", "--squash", "--repo", config.GITHUB_REPO]);
+  } catch (error) {
+    console.error(`factory: #${issue.number} auto-merge failed: ${String(error)}`);
+  }
   gh([
     "issue",
     "comment",
@@ -594,31 +643,16 @@ function deliver(issue: QueueIssue, branch: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Keeping open factory pull requests mergeable, and merging the green ones.
+// Keeping open factory pull requests mergeable.
 //
 // The factory opens a pull request per ticket from a worktree based on
 // origin/main at the moment of the pass. As main moves (earlier pull
 // requests merge), later branches fall behind and can conflict. Each pass
-// rebases every open factory branch onto the latest main (resolving a
-// conflict when the changes are compatible) and merges the branches whose
-// CI is green.
+// rebases every open factory branch onto the latest main, resolving a
+// conflict when the changes are compatible. Merging is GitHub's native
+// auto-merge, armed at delivery: the pull request closes as soon as CI is
+// green and there is no conflict.
 // ---------------------------------------------------------------------------
-
-/** The CI verdict on a pull request's head: green, red or pending. */
-function checkState(prNumber: number): "green" | "red" | "pending" {
-  const checks = ghJson<{ state: string }[]>([
-    "pr",
-    "checks",
-    String(prNumber),
-    "--repo",
-    config.GITHUB_REPO,
-    "--json",
-    "state",
-  ]);
-  if (checks.some((check) => check.state === "FAILURE")) return "red";
-  if (checks.some((check) => check.state === "PENDING")) return "pending";
-  return "green";
-}
 
 /** Open factory pull requests (the sandcastle/issue-* branches). */
 function openFactoryPrs(): {
@@ -719,34 +753,6 @@ function rebaseOpenPrs(): void {
     } catch (error) {
       // one bad branch must not take the rest of the pass down
       console.error(`  #${pr.number}: rebase failed: ${String(error)}`);
-    }
-  }
-}
-
-/** Merge every open factory pull request whose CI is green. */
-function mergeGreenPrs(): void {
-  for (const pr of openFactoryPrs()) {
-    try {
-      if (pr.isDraft) {
-        console.log(`  #${pr.number}: draft; waiting`);
-        continue;
-      }
-      if (pr.mergeable === "CONFLICTING") {
-        console.log(`  #${pr.number}: merge conflicts; waiting for a rebase or a human`);
-        continue;
-      }
-      const state = checkState(pr.number);
-      if (state === "green") {
-        gh(["pr", "merge", String(pr.number), "--squash", "--repo", config.GITHUB_REPO]);
-        console.log(`  #${pr.number}: merged (CI green)`);
-      } else if (state === "red") {
-        console.log(`  #${pr.number}: CI red; left for the next pass`);
-      } else {
-        console.log(`  #${pr.number}: CI pending; waiting`);
-      }
-    } catch (error) {
-      // one unmergeable pull request must not stop the rest of the pass
-      console.error(`  #${pr.number}: merge failed: ${String(error)}`);
     }
   }
 }
