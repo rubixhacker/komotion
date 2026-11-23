@@ -155,7 +155,7 @@ fun <T> pickPerFrame(seed: Long, list: List<T>): T {
  */
 @ExperimentalKomotionApi
 fun randomInRange(seed: String, range: IntRange): Int {
-    require(!range.isEmpty()) { "range must not be empty: $range" }
+    require(!range.isEmpty()) { "randomInRange: range must not be empty: $range" }
     return seededRandom(seed).nextInt(range.first, range.last + 1)
 }
 
@@ -173,7 +173,7 @@ fun randomInRange(seed: String, range: IntRange): Int {
  */
 @ExperimentalKomotionApi
 fun randomInRange(seed: Long, range: IntRange): Int {
-    require(!range.isEmpty()) { "range must not be empty: $range" }
+    require(!range.isEmpty()) { "randomInRange: range must not be empty: $range" }
     return seededRandom(seed).nextInt(range.first, range.last + 1)
 }
 
@@ -196,7 +196,7 @@ fun randomInRange(seed: Long, range: IntRange): Int {
 @ExperimentalKomotionApi
 @Composable
 fun randomInRangePerFrame(seed: String, range: IntRange): Int {
-    require(!range.isEmpty()) { "range must not be empty: $range" }
+    require(!range.isEmpty()) { "randomInRangePerFrame: range must not be empty: $range" }
     return seededRandom(seed, frame = LocalFrame.current).nextInt(range.first, range.last + 1)
 }
 
@@ -219,7 +219,7 @@ fun randomInRangePerFrame(seed: String, range: IntRange): Int {
 @ExperimentalKomotionApi
 @Composable
 fun randomInRangePerFrame(seed: Long, range: IntRange): Int {
-    require(!range.isEmpty()) { "range must not be empty: $range" }
+    require(!range.isEmpty()) { "randomInRangePerFrame: range must not be empty: $range" }
     return seededRandom(seed, frame = LocalFrame.current).nextInt(range.first, range.last + 1)
 }
 
@@ -240,7 +240,7 @@ fun randomInRangePerFrame(seed: Long, range: IntRange): Int {
  */
 @ExperimentalKomotionApi
 fun randomInRange(seed: String, range: ClosedFloatingPointRange<Float>): Float {
-    require(!range.isEmpty()) { "range must not be empty: $range" }
+    require(!range.isEmpty()) { "randomInRange: range must not be empty: $range" }
     return seededRandom(seed).nextFloat() * (range.endInclusive - range.start) + range.start
 }
 
@@ -261,7 +261,7 @@ fun randomInRange(seed: String, range: ClosedFloatingPointRange<Float>): Float {
  */
 @ExperimentalKomotionApi
 fun randomInRange(seed: Long, range: ClosedFloatingPointRange<Float>): Float {
-    require(!range.isEmpty()) { "range must not be empty: $range" }
+    require(!range.isEmpty()) { "randomInRange: range must not be empty: $range" }
     return seededRandom(seed).nextFloat() * (range.endInclusive - range.start) + range.start
 }
 
@@ -287,7 +287,7 @@ fun randomInRange(seed: Long, range: ClosedFloatingPointRange<Float>): Float {
 @ExperimentalKomotionApi
 @Composable
 fun randomInRangePerFrame(seed: String, range: ClosedFloatingPointRange<Float>): Float {
-    require(!range.isEmpty()) { "range must not be empty: $range" }
+    require(!range.isEmpty()) { "randomInRangePerFrame: range must not be empty: $range" }
     return seededRandom(seed, frame = LocalFrame.current).nextFloat() * (range.endInclusive - range.start) + range.start
 }
 
@@ -313,6 +313,6 @@ fun randomInRangePerFrame(seed: String, range: ClosedFloatingPointRange<Float>):
 @ExperimentalKomotionApi
 @Composable
 fun randomInRangePerFrame(seed: Long, range: ClosedFloatingPointRange<Float>): Float {
-    require(!range.isEmpty()) { "range must not be empty: $range" }
+    require(!range.isEmpty()) { "randomInRangePerFrame: range must not be empty: $range" }
     return seededRandom(seed, frame = LocalFrame.current).nextFloat() * (range.endInclusive - range.start) + range.start
 }
