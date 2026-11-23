@@ -34,15 +34,16 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
     override fun load(file: String) {
         val bytes = File(file).takeIf { it.exists() }?.readBytes()
         data = null
+        position = 0
         if (bytes != null) {
             try {
                 parseWavHeader(bytes)
                 data = bytes
+                position = dataOffset
             } catch (e: IllegalArgumentException) {
                 // Unsupported WAV format; preview stays silent.
             }
         }
-        position = dataOffset
     }
 
     /**
@@ -56,7 +57,7 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
         dataLength = 0
         require(bytes.size >= 12) { "File too small to be a WAV" }
         // RIFF header
-        require(bytes[0] == 'R'.code.toByte() && bytes[1] == 'I'.code.toByte()) { "Not a RIFF file" }
+        require(String(bytes, 0, 4) == "RIFF") { "Not a RIFF file" }
         var foundFormat = false
         // Walk chunks to find the format and data chunks.
         var index = 12
