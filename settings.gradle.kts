@@ -16,6 +16,7 @@ dependencyResolutionManagement {
 rootProject.name = "komotion"
 
 include(":komotion-core")
+include(":komotion-media")
 include(":komotion-player")
 include(":komotion-export-desktop")
 include(":sample-app")
