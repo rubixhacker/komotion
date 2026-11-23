@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.Image
 import java.io.File
+import java.util.Collections
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -41,13 +42,8 @@ class ExportOptionsE2ETest {
         Color(0xFF336699),
     )
 
-    private val colorForScale = Color.Gray
-
-    private fun ffmpegAvailable(): Boolean = try {
-        ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-    } catch (e: Exception) {
-        false
-    }
+    /** A flat, uninteresting background for tests that do not check pixels. */
+    private val solidColor = Color.Gray
 
     @Test
     fun `frameRange renders exactly the requested frames in order`() {
@@ -156,7 +152,7 @@ class ExportOptionsE2ETest {
 
         val composition = Composition(width = 320, height = 240, durationInFrames = 5, fps = 30)
         val content: @Composable () -> Unit = {
-            Box(Modifier.fillMaxSize().background(colorForScale))
+            Box(Modifier.fillMaxSize().background(solidColor))
         }
 
         runBlocking {
@@ -185,7 +181,7 @@ class ExportOptionsE2ETest {
 
         val composition = Composition(width = 160, height = 120, durationInFrames = 5, fps = 30)
         val content: @Composable () -> Unit = {
-            Box(Modifier.fillMaxSize().background(colorForScale))
+            Box(Modifier.fillMaxSize().background(solidColor))
         }
 
         runBlocking {
@@ -214,7 +210,7 @@ class ExportOptionsE2ETest {
 
         val composition = Composition(width = 160, height = 120, durationInFrames = 5, fps = 30)
         val content: @Composable () -> Unit = {
-            Box(Modifier.fillMaxSize().background(colorForScale))
+            Box(Modifier.fillMaxSize().background(solidColor))
         }
 
         runBlocking {
@@ -241,7 +237,7 @@ class ExportOptionsE2ETest {
         val tone = createToneWav()
         val composition = Composition(width = 160, height = 120, durationInFrames = 30, fps = 30)
         val content: @Composable () -> Unit = {
-            Box(Modifier.fillMaxSize().background(colorForScale))
+            Box(Modifier.fillMaxSize().background(solidColor))
         }
         val track = AudioTrack(file = tone.absolutePath, startFrame = 0)
 
@@ -294,7 +290,7 @@ class ExportOptionsE2ETest {
 
         val composition = Composition(width = 160, height = 120, durationInFrames = 5, fps = 30)
         val content: @Composable () -> Unit = {
-            Box(Modifier.fillMaxSize().background(colorForScale))
+            Box(Modifier.fillMaxSize().background(solidColor))
         }
 
         runBlocking {
@@ -324,10 +320,10 @@ class ExportOptionsE2ETest {
 
         val composition = Composition(width = 160, height = 120, durationInFrames = 10, fps = 30)
         val content: @Composable () -> Unit = {
-            Box(Modifier.fillMaxSize().background(colorForScale))
+            Box(Modifier.fillMaxSize().background(solidColor))
         }
 
-        val progress = mutableListOf<RenderProgress>()
+        val progress = Collections.synchronizedList(mutableListOf<RenderProgress>())
         runBlocking {
             withContext(Dispatchers.Main) {
                 FfmpegFrameRenderer(renderMode = RenderMode.PngSequence).render(

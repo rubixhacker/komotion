@@ -12,7 +12,8 @@ import androidx.compose.runtime.Composable
  * which is not available in commonMain).
  *
  * [onProgress] reports progress in the [RenderStage.Rendering] and
- * [RenderStage.Encoding] stages.
+ * [RenderStage.Encoding] stages. It may be invoked concurrently from
+ * multiple threads; synchronize if the callback collects state.
  */
 interface FrameRenderer {
     suspend fun render(

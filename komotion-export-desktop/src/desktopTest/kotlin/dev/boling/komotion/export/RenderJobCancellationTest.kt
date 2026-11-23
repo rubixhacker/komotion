@@ -18,12 +18,6 @@ import kotlin.test.assertTrue
 
 class RenderJobCancellationTest {
 
-    private fun ffmpegAvailable(): Boolean = try {
-        ProcessBuilder("ffmpeg", "-version").start().waitFor() == 0
-    } catch (e: Exception) {
-        false
-    }
-
     @Test
     fun `cancelling a PngSequence render leaves no temp files or FFmpeg processes`() {
         if (!ffmpegAvailable()) {
