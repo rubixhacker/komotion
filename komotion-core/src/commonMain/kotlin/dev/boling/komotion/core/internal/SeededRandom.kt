@@ -13,31 +13,18 @@ import kotlin.random.Random
 
 /**
  * Returns a deterministic [Random] seeded from [seed] and an optional [frame].
- *
- * When [frame] is `null`, the seed is derived purely from the seed's hash.
- * When non-null, the frame is folded in via `combineHash(seedHash, fnv1a64(frame.toLong()))`
- * so per-frame variation is reproducible.
  */
 internal fun seededRandom(seed: String, frame: Int? = null): Random =
-    seededRandomFromHash(fnv1a64(seed), frame)
+    seededRandom(fnv1a64(seed), frame)
 
 /**
  * Returns a deterministic [Random] seeded from [seed] and an optional [frame].
  *
- * See the [seededRandom] overload for the seeding contract.
+ * When [frame] is `null`, [seed] is used directly as the RNG seed.
+ * When non-null, the frame is folded into the seed so the same seed
+ * produces different streams for different frames.
  */
-internal fun seededRandom(seed: Long, frame: Int? = null): Random =
-    seededRandomFromHash(fnv1a64(seed), frame)
-
-/**
- * Builds a deterministic [Random] from an already-hashed [seedHash] and an
- * optional [frame].
- *
- * When [frame] is non-null it is folded into the hash via
- * `combineHash(seedHash, fnv1a64(frame.toLong()))`; otherwise the hash is used
- * as-is.
- */
-private fun seededRandomFromHash(seedHash: Long, frame: Int?): Random {
-    val combined = frame?.let { combineHash(seedHash, fnv1a64(it.toLong())) } ?: seedHash
+internal fun seededRandom(seed: Long, frame: Int? = null): Random {
+    val combined = if (frame == null) seed else combineHash(seed, fnv1a64(frame.toLong()))
     return Random(combined)
 }
