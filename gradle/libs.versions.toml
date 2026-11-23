@@ -14,6 +14,7 @@ androidx-activity-compose = { module = "androidx.activity:activity-compose", ver
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 molecule-runtime = { module = "app.cash.molecule:molecule-runtime", version.ref = "molecule" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
 skiko-awt-runtime-linux-x64 = { module = "org.jetbrains.skiko:skiko-awt-runtime-linux-x64", version.ref = "skiko" }

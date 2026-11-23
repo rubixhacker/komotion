@@ -67,6 +67,7 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
             implementation(libs.molecule.runtime)
             implementation(libs.turbine)
             implementation(compose.animation)
