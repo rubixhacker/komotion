@@ -1,13 +1,17 @@
 package dev.boling.komotion.player
 
 import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyPress
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.runComposeUiTest
 import dev.boling.komotion.core.Composition
 import dev.boling.komotion.core.CompositionEntry
@@ -17,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
@@ -103,6 +108,36 @@ class KomotionPlayerTest {
         onNodeWithContentDescription("Skip to start").performClick()
         waitForIdle()
         assertEquals(30, observedFrame)
+    }
+
+    @Test
+    fun `scrubbing a one-frame window stays inside the window`() = runComposeUiTest {
+        val controller = KomotionPlayerController()
+        setContent {
+            KomotionPlayer(
+                composition = testComposition,
+                controller = controller,
+                inFrame = 59,
+                outFrame = 59,
+                autoPlay = false,
+            ) {
+                LocalFrame.current
+            }
+        }
+        waitForIdle()
+
+        // The slider's range is extended by one frame so it stays usable;
+        // dragging to its far end must not seek past the window.
+        onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo(59f, 59f..60f, 0)))
+            .performTouchInput {
+                down(Offset(centerX, centerY))
+                moveTo(Offset(right + 100f, centerY))
+                up()
+            }
+        waitForIdle()
+
+        assertEquals(59, controller.state.value.frame)
+        assertNull(controller.state.value.error)
     }
 
     @Test

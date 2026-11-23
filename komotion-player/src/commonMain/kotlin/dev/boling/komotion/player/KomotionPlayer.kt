@@ -181,44 +181,47 @@ fun KomotionPlayer(
         if (fullscreen) platformFullscreen.enter() else platformFullscreen.exit()
     }
 
-    val keyboardModifier = if (controls) {
-        Modifier.onPreviewKeyEvent { keyEvent ->
-            when (keyEvent.key) {
-                Key.Spacebar -> {
-                    togglePlayback()
-                    true
+    // Keyboard shortcuts and focus, enabled together with the control bar.
+    val playerModifier = if (controls) {
+        Modifier
+            .onPreviewKeyEvent { keyEvent ->
+                when (keyEvent.key) {
+                    Key.Spacebar -> {
+                        togglePlayback()
+                        true
+                    }
+                    Key.DirectionLeft -> {
+                        seek(maxOf(windowStart, currentFrame - 1))
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        seek(minOf(windowEnd, currentFrame + 1))
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        playerVolume = (playerVolume + 0.1f).coerceAtMost(1f)
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        playerVolume = (playerVolume - 0.1f).coerceAtLeast(0f)
+                        true
+                    }
+                    Key.M -> {
+                        toggleMute()
+                        true
+                    }
+                    Key.L -> {
+                        toggleLoop()
+                        true
+                    }
+                    Key.F -> {
+                        fullscreen = !fullscreen
+                        true
+                    }
+                    else -> false
                 }
-                Key.DirectionLeft -> {
-                    seek(maxOf(windowStart, currentFrame - 1))
-                    true
-                }
-                Key.DirectionRight -> {
-                    seek(minOf(windowEnd, currentFrame + 1))
-                    true
-                }
-                Key.DirectionUp -> {
-                    playerVolume = (playerVolume + 0.1f).coerceAtMost(1f)
-                    true
-                }
-                Key.DirectionDown -> {
-                    playerVolume = (playerVolume - 0.1f).coerceAtLeast(0f)
-                    true
-                }
-                Key.M -> {
-                    toggleMute()
-                    true
-                }
-                Key.L -> {
-                    toggleLoop()
-                    true
-                }
-                Key.F -> {
-                    fullscreen = !fullscreen
-                    true
-                }
-                else -> false
             }
-        }
+            .focusable()
     } else {
         Modifier
     }
@@ -227,11 +230,7 @@ fun KomotionPlayer(
         LocalFrame provides currentFrame,
         LocalComposition provides composition,
     ) {
-        Column(
-            modifier = modifier
-                .then(keyboardModifier)
-                .then(if (controls) Modifier.focusable() else Modifier),
-        ) {
+        Column(modifier = modifier.then(playerModifier)) {
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -251,7 +250,9 @@ fun KomotionPlayer(
                     onPlayPause = { togglePlayback() },
                     onSkipToStart = { seek(windowStart) },
                     onSkipToEnd = { seek(windowEnd) },
-                    onScrub = { seek(it) },
+                    // The slider's range is extended by one frame when the window is
+                    // a single frame, so clamp the scrubbed value back to the window.
+                    onScrub = { seek(it.coerceIn(windowStart, windowEnd)) },
                     onLoopToggle = { toggleLoop() },
                     onFullscreenToggle = { fullscreen = !fullscreen },
                 )
