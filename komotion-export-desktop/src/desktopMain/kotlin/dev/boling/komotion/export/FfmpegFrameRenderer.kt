@@ -99,11 +99,9 @@ class FfmpegFrameRenderer(
         val ffmpeg = resolveFfmpeg()
         val command = buildPipeFfmpegCommand(ffmpeg, composition, outputPath, audioTracks, options)
 
-        val process = withContext(Dispatchers.IO) {
-            ProcessBuilder(command)
-                .redirectErrorStream(true)
-                .start()
-        }
+        val process = ProcessBuilder(command)
+            .redirectErrorStream(true)
+            .start()
 
         val totalFrames = frames.size
         val channel = Channel<ByteArray>(capacity = workerCount * 2)
@@ -180,25 +178,26 @@ class FfmpegFrameRenderer(
         frames: List<Int>,
     ) {
         val ffmpeg = resolveFfmpeg()
-        val tempDir = withContext(Dispatchers.IO) {
-            Files.createTempDirectory("komotion-").toFile()
-        }
         val renderer = OffscreenRenderer(composition)
         try {
-            for ((index, frame) in frames.withIndex()) {
-                val pngBytes = renderer.renderFrame(frame, content)
-                withContext(Dispatchers.IO) {
-                    File(tempDir, "frame%05d.png".format(index)).writeBytes(pngBytes)
+            val tempDir = Files.createTempDirectory("komotion-").toFile()
+            try {
+                for ((index, frame) in frames.withIndex()) {
+                    val pngBytes = renderer.renderFrame(frame, content)
+                    withContext(Dispatchers.IO) {
+                        File(tempDir, "frame%05d.png".format(index)).writeBytes(pngBytes)
+                    }
+                    onProgress(RenderProgress(RenderStage.Rendering, index + 1, frames.size))
+                    yield()
                 }
-                onProgress(RenderProgress(RenderStage.Rendering, index + 1, frames.size))
-                yield()
+                onProgress(RenderProgress(RenderStage.Encoding, frames.size, frames.size))
+                invokeFfmpeg(ffmpeg, tempDir, composition, outputPath, audioTracks, options)
+            } finally {
+                // NonCancellable: the cleanup must run even when the render was cancelled.
+                withContext(NonCancellable) { tempDir.deleteRecursively() }
             }
-            onProgress(RenderProgress(RenderStage.Encoding, frames.size, frames.size))
-            invokeFfmpeg(ffmpeg, tempDir, composition, outputPath, audioTracks, options)
         } finally {
             renderer.close()
-            // NonCancellable: the cleanup must run even when the render was cancelled.
-            withContext(NonCancellable) { tempDir.deleteRecursively() }
         }
     }
 
@@ -270,12 +269,10 @@ class FfmpegFrameRenderer(
         options: ExportOptions,
     ) {
         val command = buildFfmpegCommand(ffmpeg, composition, outputPath, audioTracks, options)
-        val process = withContext(Dispatchers.IO) {
-            ProcessBuilder(command)
-                .directory(tempDir)
-                .redirectErrorStream(true)
-                .start()
-        }
+        val process = ProcessBuilder(command)
+            .directory(tempDir)
+            .redirectErrorStream(true)
+            .start()
         try {
             coroutineScope {
                 // Drain FFmpeg's stdout/stderr to prevent pipe buffer deadlock.
