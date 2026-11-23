@@ -2,14 +2,23 @@ package dev.boling.komotion.export
 
 import androidx.compose.runtime.Composable
 import dev.boling.komotion.core.AudioTrack
+import dev.boling.komotion.core.Codec
 import dev.boling.komotion.core.Composition
+import dev.boling.komotion.core.ExportOptions
+import dev.boling.komotion.core.FrameRange
 import dev.boling.komotion.core.FrameRenderer
+import dev.boling.komotion.core.RenderProgress
+import dev.boling.komotion.core.RenderStage
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.jetbrains.skia.EncodedImageFormat
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.roundToInt
 
 enum class FfmpegPreset {
     UltraFast, Fast, Medium, Slow, VerySlow;
@@ -31,11 +40,50 @@ class FfmpegFrameRenderer(
         outputPath: String,
         content: @Composable () -> Unit,
         audioTracks: List<AudioTrack>,
-        onProgress: (framesRendered: Int) -> Unit,
+        onProgress: (RenderProgress) -> Unit,
+        options: ExportOptions,
     ) {
+        val frames = expandFrameRange(options.frameRange, composition.durationInFrames)
+        require(frames.isNotEmpty()) { "frameRange ${options.frameRange} selects no frames" }
         when (renderMode) {
-            RenderMode.Pipe -> renderPiped(composition, outputPath, content, audioTracks, onProgress)
-            RenderMode.PngSequence -> renderPngSequence(composition, outputPath, content, audioTracks, onProgress)
+            RenderMode.Pipe -> renderPiped(composition, outputPath, content, audioTracks, onProgress, options, frames)
+            RenderMode.PngSequence -> renderPngSequence(composition, outputPath, content, audioTracks, onProgress, options, frames)
+        }
+    }
+
+    /**
+     * Renders a single frame to an image file directly through Skia, without
+     * invoking FFmpeg.
+     *
+     * The format is chosen from the file extension: `.jpg`/`.jpeg` encodes JPEG,
+     * anything else encodes PNG.
+     *
+     * @return the written file.
+     */
+    suspend fun renderStill(
+        composition: Composition,
+        frame: Int,
+        outputPath: String,
+        content: @Composable () -> Unit,
+    ): File {
+        require(frame in 0 until composition.durationInFrames) {
+            "Frame $frame is outside 0..${composition.durationInFrames - 1}"
+        }
+        val renderer = OffscreenRenderer(composition)
+        try {
+            val image = renderer.renderFrameImage(frame, content)
+            val format = if (File(outputPath).extension.lowercase() in setOf("jpg", "jpeg")) {
+                EncodedImageFormat.JPEG
+            } else {
+                EncodedImageFormat.PNG
+            }
+            val bytes = image.encodeToData(format)!!.bytes
+            withContext(Dispatchers.IO) {
+                File(outputPath).writeBytes(bytes)
+            }
+            return File(outputPath)
+        } finally {
+            renderer.close()
         }
     }
 
@@ -44,10 +92,12 @@ class FfmpegFrameRenderer(
         outputPath: String,
         content: @Composable () -> Unit,
         audioTracks: List<AudioTrack>,
-        onProgress: (framesRendered: Int) -> Unit,
+        onProgress: (RenderProgress) -> Unit,
+        options: ExportOptions,
+        frames: List<Int>,
     ) {
         val ffmpeg = resolveFfmpeg()
-        val command = buildPipeFfmpegCommand(ffmpeg, composition, outputPath, audioTracks)
+        val command = buildPipeFfmpegCommand(ffmpeg, composition, outputPath, audioTracks, options)
 
         val process = withContext(Dispatchers.IO) {
             ProcessBuilder(command)
@@ -55,7 +105,7 @@ class FfmpegFrameRenderer(
                 .start()
         }
 
-        val totalFrames = composition.durationInFrames
+        val totalFrames = frames.size
         val channel = Channel<Pair<Int, ByteArray>>(capacity = workerCount * 2)
 
         try {
@@ -67,9 +117,10 @@ class FfmpegFrameRenderer(
                 val renderJob = launch {
                     val renderer = OffscreenRenderer(composition)
                     try {
-                        for (frame in 0 until totalFrames) {
+                        for ((index, frame) in frames.withIndex()) {
                             val bytes = renderer.renderFrameRaw(frame, content)
                             channel.send(Pair(frame, bytes))
+                            onProgress(RenderProgress(RenderStage.Rendering, index + 1, totalFrames))
                             yield()
                         }
                     } finally {
@@ -89,9 +140,11 @@ class FfmpegFrameRenderer(
                     val outputStream = process.outputStream
 
                     try {
-                        for ((frameNum, bytes) in channel) {
+                        var written = 0
+                        for ((_, bytes) in channel) {
                             outputStream.write(bytes)
-                            onProgress(frameNum + 1)
+                            written++
+                            onProgress(RenderProgress(RenderStage.Encoding, written, totalFrames))
                         }
                     } finally {
                         outputStream.close()
@@ -108,12 +161,13 @@ class FfmpegFrameRenderer(
             }
 
             // Wait for FFmpeg to finish
-            val exitCode = withContext(Dispatchers.IO) { process.waitFor() }
+            val exitCode = waitForCancellationAware(process)
             if (exitCode != 0) {
                 throw IllegalStateException("FFmpeg failed (exit $exitCode)")
             }
         } finally {
-            withContext(Dispatchers.IO) {
+            // NonCancellable: the cleanup must run even when the render was cancelled.
+            withContext(NonCancellable) {
                 process.inputStream.close()
                 process.outputStream.close()
                 process.errorStream.close()
@@ -127,7 +181,9 @@ class FfmpegFrameRenderer(
         outputPath: String,
         content: @Composable () -> Unit,
         audioTracks: List<AudioTrack>,
-        onProgress: (framesRendered: Int) -> Unit,
+        onProgress: (RenderProgress) -> Unit,
+        options: ExportOptions,
+        frames: List<Int>,
     ) {
         val ffmpeg = resolveFfmpeg()
         val tempDir = withContext(Dispatchers.IO) {
@@ -135,20 +191,22 @@ class FfmpegFrameRenderer(
         }
         val renderer = OffscreenRenderer(composition)
         try {
-            for (frame in 0 until composition.durationInFrames) {
+            for ((index, frame) in frames.withIndex()) {
                 val pngBytes = renderer.renderFrame(frame, content)
                 withContext(Dispatchers.IO) {
-                    File(tempDir, "frame%05d.png".format(frame)).writeBytes(pngBytes)
+                    File(tempDir, "frame%05d.png".format(index)).writeBytes(pngBytes)
                 }
-                onProgress(frame + 1)
+                onProgress(RenderProgress(RenderStage.Rendering, index + 1, frames.size))
                 yield()
             }
+            onProgress(RenderProgress(RenderStage.Encoding, frames.size, frames.size))
             withContext(Dispatchers.IO) {
-                invokeFfmpeg(ffmpeg, tempDir, composition, outputPath, audioTracks)
+                invokeFfmpeg(ffmpeg, tempDir, composition, outputPath, audioTracks, options)
             }
         } finally {
             renderer.close()
-            withContext(Dispatchers.IO) { tempDir.deleteRecursively() }
+            // NonCancellable: the cleanup must run even when the render was cancelled.
+            withContext(NonCancellable) { tempDir.deleteRecursively() }
         }
     }
 
@@ -158,8 +216,10 @@ class FfmpegFrameRenderer(
         content: @Composable () -> Unit,
         scope: CoroutineScope,
         audioTracks: List<AudioTrack> = emptyList(),
+        options: ExportOptions = ExportOptions(),
     ): RenderJob {
-        val progressFlow = MutableStateFlow(0)
+        val totalFrames = expandFrameRange(options.frameRange, composition.durationInFrames).size
+        val progressFlow = MutableStateFlow(RenderProgress(RenderStage.Rendering, 0, totalFrames))
         val isCompleteFlow = MutableStateFlow(false)
         val errorFlow = MutableStateFlow<Throwable?>(null)
 
@@ -171,6 +231,7 @@ class FfmpegFrameRenderer(
                     content = content,
                     audioTracks = audioTracks,
                     onProgress = { progressFlow.value = it },
+                    options = options,
                 )
                 isCompleteFlow.value = true
             } catch (e: Throwable) {
@@ -180,7 +241,7 @@ class FfmpegFrameRenderer(
 
         return RenderJob(
             progress = progressFlow.asStateFlow(),
-            totalFrames = composition.durationInFrames,
+            totalFrames = totalFrames,
             isComplete = isCompleteFlow.asStateFlow(),
             error = errorFlow.asStateFlow(),
             job = job,
@@ -208,24 +269,85 @@ class FfmpegFrameRenderer(
         }
     }
 
-    private fun invokeFfmpeg(
+    private suspend fun invokeFfmpeg(
         ffmpeg: String,
         tempDir: File,
         composition: Composition,
         outputPath: String,
-        audioTracks: List<AudioTrack> = emptyList(),
+        audioTracks: List<AudioTrack>,
+        options: ExportOptions,
     ) {
-        val command = buildFfmpegCommand(ffmpeg, composition, outputPath, audioTracks)
-        val process = ProcessBuilder(command)
-            .directory(tempDir)
-            .redirectErrorStream(true)
-            .start()
-
-        val exitCode = process.waitFor()
-        if (exitCode != 0) {
-            val output = process.inputStream.bufferedReader().readText()
-            throw IllegalStateException("FFmpeg failed (exit $exitCode):\n$output")
+        val command = buildFfmpegCommand(ffmpeg, composition, outputPath, audioTracks, options)
+        val process = withContext(Dispatchers.IO) {
+            ProcessBuilder(command)
+                .directory(tempDir)
+                .redirectErrorStream(true)
+                .start()
         }
+        try {
+            coroutineScope {
+                // Drain FFmpeg's stdout/stderr to prevent pipe buffer deadlock.
+                val outputRef = AtomicReference<String>()
+                val stdoutDrain = launch(Dispatchers.IO) {
+                    outputRef.set(process.inputStream.bufferedReader().readText())
+                }
+                val exitCode = waitForCancellationAware(process)
+                if (exitCode != 0) {
+                    throw IllegalStateException("FFmpeg failed (exit $exitCode):\n${outputRef.get()}")
+                }
+                stdoutDrain.join()
+            }
+        } finally {
+            // NonCancellable: the cleanup must run even when the render was cancelled.
+            withContext(NonCancellable) {
+                process.inputStream.close()
+                process.outputStream.close()
+                process.errorStream.close()
+                process.destroyForcibly()
+            }
+        }
+    }
+
+    /**
+     * Waits for [process] to exit, checking for cancellation on every poll so the
+     * process can be torn down when the render is cancelled.
+     */
+    private suspend fun waitForCancellationAware(process: Process): Int = withContext(Dispatchers.IO) {
+        while (true) {
+            val finished = process.waitFor(100, TimeUnit.MILLISECONDS)
+            if (finished) return@withContext process.exitValue()
+            delay(1) // Suspension point: throws if the job was cancelled.
+        }
+        error("Unreachable")
+    }
+
+    /**
+     * Expands [frameRange] into the exact list of frames to render, in order.
+     *
+     * Ranges must be ordered and non-overlapping; open-ended ranges run to the end
+     * of the composition.
+     */
+    internal fun expandFrameRange(frameRange: List<FrameRange>, durationInFrames: Int): List<Int> {
+        require(durationInFrames > 0) { "durationInFrames must be positive" }
+        val frames = mutableListOf<Int>()
+        var previousEnd = -1
+        for (range in frameRange) {
+            val start = range.start
+            val end = range.end ?: durationInFrames - 1
+            require(start in 0 until durationInFrames) {
+                "Frame range $range starts at frame $start, which is outside 0..${durationInFrames - 1}"
+            }
+            require(end < durationInFrames) {
+                "Frame range $range ends at frame $end, which is outside 0..${durationInFrames - 1}"
+            }
+            require(end >= start) { "Frame range $range is empty" }
+            require(start > previousEnd) {
+                "Frame ranges must be ordered and non-overlapping: $range follows a range ending at frame $previousEnd"
+            }
+            frames += (start..end)
+            previousEnd = end
+        }
+        return frames
     }
 
     internal fun buildFfmpegCommand(
@@ -233,19 +355,49 @@ class FfmpegFrameRenderer(
         composition: Composition,
         outputPath: String,
         audioTracks: List<AudioTrack>,
+        options: ExportOptions = ExportOptions(),
+    ): List<String> =
+        buildCommand(ffmpeg, composition, outputPath, audioTracks, options, piped = false)
+
+    internal fun buildPipeFfmpegCommand(
+        ffmpeg: String,
+        composition: Composition,
+        outputPath: String,
+        audioTracks: List<AudioTrack>,
+        options: ExportOptions = ExportOptions(),
+    ): List<String> =
+        buildCommand(ffmpeg, composition, outputPath, audioTracks, options, piped = true)
+
+    private fun buildCommand(
+        ffmpeg: String,
+        composition: Composition,
+        outputPath: String,
+        audioTracks: List<AudioTrack>,
+        options: ExportOptions,
+        piped: Boolean,
     ): List<String> {
-        val args = mutableListOf(
-            ffmpeg, "-y",
-            "-r", composition.fps.toString(),
-            "-i", "frame%05d.png",
-        )
+        val args = mutableListOf(ffmpeg, "-y")
+
+        if (piped) {
+            args += listOf(
+                "-f", "rawvideo",
+                "-pix_fmt", "bgra",
+                "-s", "${composition.width}x${composition.height}",
+            )
+        }
+        args += listOf("-r", composition.fps.toString())
+        args += listOf("-i", if (piped) "pipe:0" else "frame%05d.png")
+
+        val hasAudio = !options.muted && audioTracks.isNotEmpty()
 
         // Add each audio file as an input
-        for (track in audioTracks) {
-            args += listOf("-i", track.file)
+        if (hasAudio) {
+            for (track in audioTracks) {
+                args += listOf("-i", track.file)
+            }
         }
 
-        if (audioTracks.isNotEmpty()) {
+        if (hasAudio) {
             // Build filter_complex: delay each audio track to its start frame, then mix
             val filterParts = mutableListOf<String>()
             val mixInputs = mutableListOf<String>()
@@ -262,71 +414,68 @@ class FfmpegFrameRenderer(
             val filterComplex = (filterParts + mixFilter).joinToString(";")
 
             args += listOf("-filter_complex", filterComplex)
-            args += listOf("-map", "0:v", "-map", "[aout]")
         }
 
-        args += listOf(
-            "-vcodec", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-crf", crf.toString(),
-            "-preset", preset.toFfmpegArg(),
-        )
+        // Scale the output proportionally
+        if (options.scale != 1.0) {
+            val width = (composition.width * options.scale).roundToInt()
+            val height = (composition.height * options.scale).roundToInt()
+            require(width > 0 && height > 0) {
+                "scale ${options.scale} produces non-positive dimensions"
+            }
+            args += listOf("-vf", "scale=$width:$height")
+        }
+
+        if (hasAudio) {
+            args += listOf("-map", "0:v")
+            if (options.separateAudioTo == null) {
+                args += listOf("-map", "[aout]")
+            }
+        }
+
+        when (val codec = options.codec) {
+            Codec.H264 -> args += listOf(
+                "-vcodec", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-crf", crf.toString(),
+                "-preset", preset.toFfmpegArg(),
+            )
+            Codec.H265 -> args += listOf(
+                "-vcodec", "libx265",
+                "-pix_fmt", "yuv420p",
+                "-crf", crf.toString(),
+                "-preset", preset.toFfmpegArg(),
+            )
+            is Codec.Custom -> args += codec.args
+        }
+
+        for ((key, value) in options.metadata) {
+            args += listOf("-metadata", "$key=$value")
+        }
 
         // Ensure absolute output path
         args += File(outputPath).absolutePath
 
+        // Write the mixed audio to a separate file instead of muxing it into the video
+        val separateAudioTo = options.separateAudioTo
+        if (hasAudio && separateAudioTo != null) {
+            args += listOf("-map", "[aout]")
+            args += listOf("-c:a", audioCodecFor(separateAudioTo))
+            args += File(separateAudioTo).absolutePath
+        }
+
         return args
     }
 
-    internal fun buildPipeFfmpegCommand(
-        ffmpeg: String,
-        composition: Composition,
-        outputPath: String,
-        audioTracks: List<AudioTrack>,
-    ): List<String> {
-        val args = mutableListOf(
-            ffmpeg, "-y",
-            "-f", "rawvideo",
-            "-pix_fmt", "bgra",
-            "-s", "${composition.width}x${composition.height}",
-            "-r", composition.fps.toString(),
-            "-i", "pipe:0",
-        )
-
-        // Add each audio file as an input
-        for (track in audioTracks) {
-            args += listOf("-i", track.file)
-        }
-
-        if (audioTracks.isNotEmpty()) {
-            val filterParts = mutableListOf<String>()
-            val mixInputs = mutableListOf<String>()
-
-            for ((index, track) in audioTracks.withIndex()) {
-                val inputIndex = index + 1
-                val delayMs = track.startFrame * 1000L / composition.fps
-                val label = "a$index"
-                filterParts += "[$inputIndex:a]adelay=$delayMs|$delayMs[$label]"
-                mixInputs += "[$label]"
-            }
-
-            val mixFilter = "${mixInputs.joinToString("")}amix=inputs=${audioTracks.size}:duration=longest:dropout_transition=0:normalize=0[aout]"
-            val filterComplex = (filterParts + mixFilter).joinToString(";")
-
-            args += listOf("-filter_complex", filterComplex)
-            args += listOf("-map", "0:v", "-map", "[aout]")
-        }
-
-        args += listOf(
-            "-vcodec", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-crf", crf.toString(),
-            "-preset", preset.toFfmpegArg(),
-        )
-
-        args += File(outputPath).absolutePath
-
-        return args
+    /**
+     * The FFmpeg audio codec for a separate audio file, chosen from its extension.
+     */
+    internal fun audioCodecFor(path: String): String = when (File(path).extension.lowercase()) {
+        "wav" -> "pcm_s16le"
+        "mp3" -> "libmp3lame"
+        "aac" -> "adts"
+        "m4a", "mp4" -> "aac"
+        else -> "aac"
     }
 }
 
