@@ -381,8 +381,7 @@ class FfmpegFrameRenderer(
                 "-s", "${composition.width}x${composition.height}",
             )
         }
-        args += listOf("-r", composition.fps.toString())
-        args += listOf("-i", if (piped) "pipe:0" else "frame%05d.png")
+        args += listOf("-r", composition.fps.toString(), "-i", if (piped) "pipe:0" else "frame%05d.png")
 
         val hasAudio = !options.muted && audioTracks.isNotEmpty()
         val separateAudioTo = options.separateAudioTo
