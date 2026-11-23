@@ -68,4 +68,41 @@ class RandomTest {
         }
         assertEquals(first, second)
     }
+
+    @Test
+    fun `randomInRange int bounds are inclusive over many seeds`() = runComposeUiTest {
+        val range = 10..20
+        repeat(1000) { i ->
+            val fromString = randomInRange("seed-$i", range)
+            val fromLong = randomInRange(i.toLong(), range)
+            assertTrue(fromString in range, "string seed out of range: $fromString")
+            assertTrue(fromLong in range, "long seed out of range: $fromLong")
+        }
+        val perFrameValues = ArrayList<Int>(4)
+        setContent {
+            CompositionLocalProvider(LocalFrame provides 42) {
+                perFrameValues.add(randomInRangePerFrame("seed-1", range))
+                perFrameValues.add(randomInRangePerFrame(42L, range))
+            }
+            CompositionLocalProvider(LocalFrame provides 43) {
+                perFrameValues.add(randomInRangePerFrame("seed-1", range))
+                perFrameValues.add(randomInRangePerFrame(42L, range))
+            }
+        }
+        perFrameValues.forEach { value ->
+            assertTrue(value in range, "per-frame value out of range: $value")
+        }
+    }
+
+    @Test
+    fun `randomInRange int range covers both ends across many seeds`() {
+        val range = 10..20
+        val results = IntArray(2000)
+        repeat(1000) { i ->
+            results[i] = randomInRange("seed-$i", range)
+            results[i + 1000] = randomInRange(i.toLong(), range)
+        }
+        assertTrue(results.any { it == range.first }, "range.first ${range.first} never drawn")
+        assertTrue(results.any { it == range.last }, "range.last ${range.last} never drawn")
+    }
 }
