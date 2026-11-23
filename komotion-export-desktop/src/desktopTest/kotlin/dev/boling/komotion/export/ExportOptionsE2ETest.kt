@@ -390,12 +390,15 @@ class ExportOptionsE2ETest {
         ffprobe(
             listOf("-show_entries", "format_tags=$tag", "-of", "default=noprint_wrappers=1"),
             file,
-        ).trim().removePrefix("$tag=")
+        ).trim()
+            // Newer ffprobe prefixes tags with "TAG:".
+            .removePrefix("TAG:$tag=")
+            .removePrefix("$tag=")
 
     private fun ffprobe(args: List<String>, file: File): String {
-        val process = ProcessBuilder(listOf("ffprobe") + args + listOf(file.absolutePath))
-            .redirectErrorStream(true)
-            .start()
+        // Probe results go to stdout; the version banner and input diagnostics go to
+        // stderr, so only capture stdout.
+        val process = ProcessBuilder(listOf("ffprobe") + args + listOf(file.absolutePath)).start()
         val output = process.inputStream.bufferedReader().readText()
         val exitCode = process.waitFor()
         if (exitCode != 0) {
@@ -410,7 +413,9 @@ class ExportOptionsE2ETest {
         png.deleteOnExit()
         val exitCode = ProcessBuilder(
             "ffmpeg", "-y", "-i", file.absolutePath,
-            "-vf", "select=eq(n,$index)", "-frames:v", "1", "-vsync", "0", png.absolutePath,
+            // The comma must be escaped so the filtergraph parser does not split
+            // the expression at the comma.
+            "-vf", "select=eq(n\\,$index)", "-frames:v", "1", "-vsync", "0", png.absolutePath,
         ).redirectErrorStream(true).start().waitFor()
         assertTrue(exitCode == 0, "ffmpeg frame extraction failed (exit $exitCode)")
         val image = Image.makeFromEncoded(png.readBytes())

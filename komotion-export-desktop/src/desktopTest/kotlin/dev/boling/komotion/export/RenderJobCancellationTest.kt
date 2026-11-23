@@ -69,7 +69,9 @@ class RenderJobCancellationTest {
         val outputFile = File.createTempFile("komotion-cancel-pipe-", ".mp4")
         outputFile.deleteOnExit()
         val scope = CoroutineScope(Dispatchers.Main)
-        val composition = Composition(width = 160, height = 120, durationInFrames = 300, fps = 30)
+        // Pipe mode renders fast (no per-frame PNG encoding), so use a large frame
+        // count to guarantee the render is still in progress when we cancel.
+        val composition = Composition(width = 160, height = 120, durationInFrames = 10_000, fps = 30)
         val content: @Composable () -> Unit = {
             Box(Modifier.fillMaxSize().background(Color.Red))
         }
