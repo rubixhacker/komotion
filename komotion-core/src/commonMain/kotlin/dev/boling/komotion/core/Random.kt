@@ -144,3 +144,97 @@ fun randomInRangePerFrame(seed: Long, range: IntRange): Int {
     require(!range.isEmpty()) { "range must not be empty: $range" }
     return seededRandom(seed, frame = LocalFrame.current).nextInt(range.first, range.last + 1)
 }
+
+/**
+ * Returns a deterministic pseudo-random [Float] in [range] derived from [seed].
+ *
+ * The lower bound is inclusive and the upper bound is exclusive, matching
+ * `kotlin.random.Random.nextFloat(from, until)`: the result is in
+ * `[range.start, range.endInclusive)`. This contrasts with the [IntRange]
+ * overloads, which are inclusive of both bounds — each variant follows the
+ * convention of its base Kotlin standard-library counterpart.
+ *
+ * Pure: the same seed always returns the same value, and the function is
+ * callable from any context, including non-Composable code.
+ *
+ * Example:
+ *   val opacity = randomInRange("fade-1", 0.0f..1.0f)
+ */
+@ExperimentalKomotionApi
+fun randomInRange(seed: String, range: ClosedFloatingPointRange<Float>): Float {
+    require(!range.isEmpty()) { "range must not be empty: $range" }
+    return seededRandom(seed).nextFloat() * (range.endInclusive - range.start) + range.start
+}
+
+/**
+ * Returns a deterministic pseudo-random [Float] in [range] derived from [seed].
+ *
+ * The lower bound is inclusive and the upper bound is exclusive, matching
+ * `kotlin.random.Random.nextFloat(from, until)`: the result is in
+ * `[range.start, range.endInclusive)`. This contrasts with the [IntRange]
+ * overloads, which are inclusive of both bounds — each variant follows the
+ * convention of its base Kotlin standard-library counterpart.
+ *
+ * Pure: the same seed always returns the same value, and the function is
+ * callable from any context, including non-Composable code.
+ *
+ * Example:
+ *   val opacity = randomInRange(42L, 0.0f..1.0f)
+ */
+@ExperimentalKomotionApi
+fun randomInRange(seed: Long, range: ClosedFloatingPointRange<Float>): Float {
+    require(!range.isEmpty()) { "range must not be empty: $range" }
+    return seededRandom(seed).nextFloat() * (range.endInclusive - range.start) + range.start
+}
+
+/**
+ * Returns a deterministic pseudo-random [Float] in [range] derived from
+ * [seed] and the current [LocalFrame].
+ *
+ * Unlike the pure [randomInRange] variants, which return the same value for
+ * a given seed on every frame, this variant folds the current frame into the
+ * seed: the same `(seed, frame)` pair always returns the same value, while
+ * different frames return different values for the same seed. Use it for
+ * per-frame procedural variation that stays reproducible across renders.
+ *
+ * The lower bound is inclusive and the upper bound is exclusive, matching
+ * `kotlin.random.Random.nextFloat(from, until)`: the result is in
+ * `[range.start, range.endInclusive)`. This contrasts with the [IntRange]
+ * overloads, which are inclusive of both bounds — each variant follows the
+ * convention of its base Kotlin standard-library counterpart.
+ *
+ * Example:
+ *   val opacity = randomInRangePerFrame("fade-1", 0.0f..1.0f)
+ */
+@ExperimentalKomotionApi
+@Composable
+fun randomInRangePerFrame(seed: String, range: ClosedFloatingPointRange<Float>): Float {
+    require(!range.isEmpty()) { "range must not be empty: $range" }
+    return seededRandom(seed, frame = LocalFrame.current).nextFloat() * (range.endInclusive - range.start) + range.start
+}
+
+/**
+ * Returns a deterministic pseudo-random [Float] in [range] derived from
+ * [seed] and the current [LocalFrame].
+ *
+ * Unlike the pure [randomInRange] variants, which return the same value for
+ * a given seed on every frame, this variant folds the current frame into the
+ * seed: the same `(seed, frame)` pair always returns the same value, while
+ * different frames return different values for the same seed. Use it for
+ * per-frame procedural variation that stays reproducible across renders.
+ *
+ * The lower bound is inclusive and the upper bound is exclusive, matching
+ * `kotlin.random.Random.nextFloat(from, until)`: the result is in
+ * `[range.start, range.endInclusive)`. This contrasts with the [IntRange]
+ * overloads, which are inclusive of both bounds — each variant follows the
+ * convention of its base Kotlin standard-library counterpart.
+ *
+ * Example:
+ *   val opacity = randomInRangePerFrame(42L, 0.0f..1.0f)
+ */
+@ExperimentalKomotionApi
+@Composable
+fun randomInRangePerFrame(seed: Long, range: ClosedFloatingPointRange<Float>): Float {
+    require(!range.isEmpty()) { "range must not be empty: $range" }
+    return seededRandom(seed, frame = LocalFrame.current).nextFloat() * (range.endInclusive - range.start) + range.start
+}

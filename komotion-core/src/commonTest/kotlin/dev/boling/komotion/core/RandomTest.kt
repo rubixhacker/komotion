@@ -105,4 +105,38 @@ class RandomTest {
         assertTrue(results.any { it == range.first }, "range.first ${range.first} never drawn")
         assertTrue(results.any { it == range.last }, "range.last ${range.last} never drawn")
     }
+
+    @Test
+    fun `randomInRange float range is lower-inclusive upper-exclusive over many seeds`() = runComposeUiTest {
+        val range = 1.0f..5.0f
+        repeat(1000) { i ->
+            val fromString = randomInRange("seed-$i", range)
+            val fromLong = randomInRange(i.toLong(), range)
+            assertTrue(
+                fromString >= range.start && fromString < range.endInclusive,
+                "string seed out of range: $fromString"
+            )
+            assertTrue(
+                fromLong >= range.start && fromLong < range.endInclusive,
+                "long seed out of range: $fromLong"
+            )
+        }
+        val perFrameValues = ArrayList<Float>(4)
+        setContent {
+            CompositionLocalProvider(LocalFrame provides 42) {
+                perFrameValues.add(randomInRangePerFrame("seed-1", range))
+                perFrameValues.add(randomInRangePerFrame(42L, range))
+            }
+            CompositionLocalProvider(LocalFrame provides 43) {
+                perFrameValues.add(randomInRangePerFrame("seed-1", range))
+                perFrameValues.add(randomInRangePerFrame(42L, range))
+            }
+        }
+        perFrameValues.forEach { value ->
+            assertTrue(
+                value >= range.start && value < range.endInclusive,
+                "per-frame value out of range: $value"
+            )
+        }
+    }
 }
