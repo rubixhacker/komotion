@@ -52,20 +52,10 @@ fun Audio(
 fun Video(
     file: String,
     startFrame: Int = 0,
-    volume: Float = 1f,
-    playbackRate: Float = 1f,
-    trimStartFrame: Int = 0,
-    trimEndFrame: Int? = null,
-    muted: Boolean = false,
 ): VideoMedia {
     val declaration = VideoMedia(
         file = file,
         startFrame = globalStartFrame(startFrame),
-        volume = volume,
-        playbackRate = playbackRate,
-        trimStartFrame = trimStartFrame,
-        trimEndFrame = trimEndFrame,
-        muted = muted,
     )
     registerDeclaration(declaration)
     return declaration
@@ -85,20 +75,10 @@ fun Video(
 fun Image(
     file: String,
     startFrame: Int = 0,
-    volume: Float = 1f,
-    playbackRate: Float = 1f,
-    trimStartFrame: Int = 0,
-    trimEndFrame: Int? = null,
-    muted: Boolean = false,
 ): ImageMedia {
     val declaration = ImageMedia(
         file = file,
         startFrame = globalStartFrame(startFrame),
-        volume = volume,
-        playbackRate = playbackRate,
-        trimStartFrame = trimStartFrame,
-        trimEndFrame = trimEndFrame,
-        muted = muted,
     )
     registerDeclaration(declaration)
     return declaration

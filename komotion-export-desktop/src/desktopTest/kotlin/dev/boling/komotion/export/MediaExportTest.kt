@@ -59,41 +59,18 @@ class MediaExportTest {
     }
 
     @Test
-    fun `export mixes audio declared inside the composition`() {
-        if (!ffmpegAvailable()) {
-            println("Skipping: FFmpeg not found on PATH")
-            return
-        }
-
-        val wav = generateTestWav()
-
-        val outputFile = File.createTempFile("komotion-media-", ".mp4")
-        outputFile.deleteOnExit()
-
-        val composition = Composition(width = 320, height = 240, durationInFrames = 10, fps = 30)
-        val content: @Composable () -> Unit = {
-            Box(Modifier.fillMaxSize().background(Color.Black))
-            Audio(file = wav.absolutePath)
-        }
-
-        runBlocking {
-            withContext(Dispatchers.Main) {
-                FfmpegFrameRenderer(renderMode = RenderMode.PngSequence)
-                    .render(
-                        composition = composition,
-                        outputPath = outputFile.absolutePath,
-                        content = content,
-                    )
-            }
-        }
-
-        assertTrue(outputFile.exists(), "MP4 file should exist")
-        assertTrue(outputFile.length() > 0, "MP4 file should not be empty")
-        assertTrue(hasAudioStream(outputFile), "Expected an audio stream in the exported MP4")
-    }
+    fun `png sequence export mixes audio declared inside the composition`() =
+        assertExportMixesDeclaredAudio(RenderMode.PngSequence)
 
     @Test
-    fun `pipe mode export mixes audio declared inside the composition`() {
+    fun `pipe mode export mixes audio declared inside the composition`() =
+        assertExportMixesDeclaredAudio(RenderMode.Pipe)
+
+    /**
+     * Exports a composition that declares one [Audio] and verifies the
+     * resulting MP4 carries an audio stream.
+     */
+    private fun assertExportMixesDeclaredAudio(renderMode: RenderMode) {
         if (!ffmpegAvailable()) {
             println("Skipping: FFmpeg not found on PATH")
             return
@@ -101,7 +78,7 @@ class MediaExportTest {
 
         val wav = generateTestWav()
 
-        val outputFile = File.createTempFile("komotion-media-pipe-", ".mp4")
+        val outputFile = File.createTempFile("komotion-media-$renderMode-", ".mp4")
         outputFile.deleteOnExit()
 
         val composition = Composition(width = 320, height = 240, durationInFrames = 10, fps = 30)
@@ -112,7 +89,7 @@ class MediaExportTest {
 
         runBlocking {
             withContext(Dispatchers.Main) {
-                FfmpegFrameRenderer(renderMode = RenderMode.Pipe, workerCount = 2)
+                FfmpegFrameRenderer(renderMode = renderMode)
                     .render(
                         composition = composition,
                         outputPath = outputFile.absolutePath,
