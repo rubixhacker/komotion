@@ -57,8 +57,11 @@ const config = z
     // Failed attempts (declines, stalls, failed gates) a ticket gets before
     // the factory hands it to a human instead of trying again.
     SANDCASTLE_TICKET_STRIKES: z.coerce.number().int().min(1).max(10).default(3),
-    // The quality gate: the same command the repository's CI runs.
-    GATE_COMMAND: z.string().default("./gradlew desktopTest"),
+    // The quality gate: the same command the repository's CI runs. Besides
+    // the desktop tests, compileAllTargets compiles the main sources of every
+    // target in every module, so a change that breaks a non-desktop target
+    // (iOS, Android, wasmJs) fails the gate and is not delivered.
+    GATE_COMMAND: z.string().default("./gradlew desktopTest compileAllTargets"),
     GATE_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
   })
   .parse(process.env);

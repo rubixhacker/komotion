@@ -27,6 +27,7 @@ Use the terms in `GLOSSARY.md` (Composition, CompositionEntry, Frame, Sequence, 
 
 ## Build and test
 
+- The delivery gate and CI run `./gradlew desktopTest compileAllTargets`: the desktop tests, plus a compile of the main sources of every target in every module, so a change that breaks a non-desktop target (iOS, Android, wasmJs) is caught before it is delivered or merged.
 - Run all desktop tests: `./gradlew desktopTest`
 - Module tests: `./gradlew :komotion-core:desktopTest` (same pattern for other modules)
 - MP4 export tests skip themselves when FFmpeg is not on `PATH`.

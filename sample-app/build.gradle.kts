@@ -11,7 +11,7 @@ kotlin {
             jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
         }
     }
-    iosArm64(); iosX64(); iosSimulatorArm64()
+    iosArm64(); iosSimulatorArm64()
     jvm("desktop") {
         compilerOptions {
             jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
