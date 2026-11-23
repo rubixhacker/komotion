@@ -10,13 +10,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.runComposeUiTest
 import dev.boling.komotion.core.LocalFrame
 import dev.boling.komotion.core.Sequence
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,25 +18,6 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class MediaCollectorTest {
-
-    /**
-     * Subscribes to [flow] once, waits for the first emission (initial
-     * composition), runs [onChange] (typically advancing the frame), then waits
-     * for the second emission (recomposition).
-     */
-    private suspend fun <T> CoroutineScope.collectTwoEmits(flow: Flow<T>, onChange: () -> Unit) {
-        var count = 0
-        val done = CompletableDeferred<Unit>()
-        val job = launch {
-            flow.take(2).collect {
-                count++
-                if (count == 1) onChange()
-                if (count == 2) done.complete(Unit)
-            }
-        }
-        done.await()
-        job.join()
-    }
 
     @Test
     fun `declaring audio registers path and timing`() = runBlocking {
@@ -158,19 +133,23 @@ class MediaCollectorTest {
     }
 
     @Test
-    fun `repeated composition of the same call site registers once`() = runBlocking {
+    fun `repeated composition of the same call site registers once`() = runComposeUiTest {
         val collector = MediaCollector()
         var frame by mutableStateOf(40)
-        val flow = moleculeFlow(RecompositionMode.Immediate) {
-            collector.frame = frame
+        collector.frame = 40
+        setContent {
             CompositionLocalProvider(LocalMediaCollector provides collector) {
                 CompositionLocalProvider(LocalFrame provides frame) {
                     Audio(file = "/a.wav", startFrame = 5)
                 }
             }
-            frame
         }
-        collectTwoEmits(flow) { frame = 45 }
+
+        // Recompose at a later frame: the same call site updates its
+        // declaration instead of registering a second one.
+        frame = 45
+        collector.frame = 45
+        waitUntil("100.ms", 5000) { collector.snapshot().size == 1 }
 
         val media = collector.snapshot()
         assertEquals(1, media.size)
