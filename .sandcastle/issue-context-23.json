@@ -1,0 +1,18 @@
+{
+  "body": "## Parent\n\n#15\n\n## What to build\n\nMake declared `Audio` audible while previewing in the Player on Android, iOS, Desktop and wasmJs, behind one small internal interface, using a maintained KMP audio library if one aligns with our Compose versions and native players otherwise.\n\n## Acceptance criteria\n\n- [ ] Audio plays during Player playback on all four platforms and stops on pause and at the end.\n- [ ] Seeking repositions audio to the new frame's time.\n- [ ] Volume and mute from the media declaration and the player apply.\n- [ ] Export remains unaffected by the preview implementation.\n- [ ] Each platform target compiles and at least Desktop is covered by an automated test.",
+  "comments": [
+    {
+      "author": "rubixhacker",
+      "body": "The factory handed this ticket to a human after 3 failed attempts.\n\nLast failure: gate ./gradlew desktopTest compileAllTargets failed: Error: Command failed: ./gradlew desktopTest compileAllTargets\n\nFAILURE: Build failed with an exception.\n\n* What went wrong:\nGradle could not start your build.\n> Could not create service of type InternalOptions using Services.createInternalOptions().\n   > java.io.FileNotFoundException: /Users/stewart/Workspace/komotion-factory/.sandcastle/worktrees/sandcastle-issue-23/gradle.properties (Operation not permitted)\n\n* Try:\n> Run with --stacktrace option to get the stack trace.\n> Run with --info or --debug option to get more log output.\n> Run with --scan to get full insights from a Build Scan (powered by Develocity).\n> Get more help at https://help.gradle.org.\n\nBUILD FAILED in 219ms\n\n\nPut `ready-for-agent` back to requeue it."
+    },
+    {
+      "author": "rubixhacker",
+      "body": "Fully specified with verifiable acceptance criteria; factory strikes were environmental (sandbox permission on `gradle.properties`), per the factory's requeue instruction."
+    }
+  ],
+  "labels": [
+    "ready-for-agent"
+  ],
+  "number": 23,
+  "title": "Audio preview playback on all platforms"
+}

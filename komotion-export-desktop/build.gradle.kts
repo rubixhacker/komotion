@@ -52,6 +52,7 @@ kotlin {
         getByName("desktopMain") {
             dependencies {
                 implementation(project(":komotion-core"))
+                implementation(project(":komotion-media"))
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
             }
