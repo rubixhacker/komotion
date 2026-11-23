@@ -26,7 +26,8 @@
   source set.
 - Pure logic uses `kotlin.test`; composition behavior uses
   `runComposeUiTest` (desktop UI tests).
-- The gate is `./gradlew desktopTest`; it must pass before you commit.
+- The gate is `./gradlew desktopTest compileAllTargets`; the desktop tests
+  must pass before you commit.
 
 ## Modules
 
