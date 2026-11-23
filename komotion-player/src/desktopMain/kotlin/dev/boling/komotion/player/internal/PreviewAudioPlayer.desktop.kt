@@ -63,21 +63,13 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
         var index = 12
         while (index + 8 <= bytes.size) {
             val chunkId = String(bytes, index, 4)
-            val chunkSize = (bytes[index + 4].toInt() and 0xFF) +
-                (bytes[index + 5].toInt() and 0xFF) shl 8 +
-                (bytes[index + 6].toInt() and 0xFF) shl 16 +
-                (bytes[index + 7].toInt() and 0xFF) shl 24
+            val chunkSize = bytes.uint32At(index + 4)
             when (chunkId) {
                 "fmt " -> {
-                    val audioFormat = bytes[index + 8].toInt() and 0xFF
-                    channels = (bytes[index + 10].toInt() and 0xFF) +
-                        (bytes[index + 11].toInt() and 0xFF) shl 8
-                    sampleRate = (bytes[index + 12].toInt() and 0xFF) +
-                        (bytes[index + 13].toInt() and 0xFF) shl 8 +
-                        (bytes[index + 14].toInt() and 0xFF) shl 16 +
-                        (bytes[index + 15].toInt() and 0xFF) shl 24
-                    val bitsPerSample = (bytes[index + 22].toInt() and 0xFF) +
-                        (bytes[index + 23].toInt() and 0xFF) shl 8
+                    val audioFormat = bytes.uint16At(index + 8)
+                    channels = bytes.uint16At(index + 10)
+                    sampleRate = bytes.uint32At(index + 12)
+                    val bitsPerSample = bytes.uint16At(index + 22)
                     bytesPerSample = bitsPerSample / 8
                     // Only 16-bit PCM is supported for preview.
                     require(audioFormat == 1) { "Only 16-bit PCM WAV is supported for preview" }
@@ -97,6 +89,17 @@ internal class DesktopPreviewAudioPlayer : PreviewAudioPlayer {
         require(foundFormat) { "No fmt chunk found" }
         require(dataOffset > 0L) { "No data chunk found" }
     }
+
+    /** Reads an unsigned little-endian 16-bit value at [offset]. */
+    private fun ByteArray.uint16At(offset: Int): Int =
+        (this[offset].toInt() and 0xFF) + (this[offset + 1].toInt() and 0xFF) shl 8
+
+    /** Reads an unsigned little-endian 32-bit value at [offset]. */
+    private fun ByteArray.uint32At(offset: Int): Int =
+        (this[offset].toInt() and 0xFF) +
+            (this[offset + 1].toInt() and 0xFF) shl 8 +
+            (this[offset + 2].toInt() and 0xFF) shl 16 +
+            (this[offset + 3].toInt() and 0xFF) shl 24
 
     private var lineFormat: AudioFormat = AudioFormat(44100f, 44100, 1, true, false)
 

@@ -1,6 +1,7 @@
 package dev.boling.komotion.player.internal
 
 import dev.boling.komotion.media.AudioMedia
+import kotlin.math.abs
 
 /**
  * A small internal interface for previewing a single audio file.
@@ -53,13 +54,9 @@ internal expect fun createPreviewAudioPlayer(): PreviewAudioPlayer
  */
 internal fun filePositionSeconds(declaration: AudioMedia, frame: Int, fps: Int): Double {
     val secondsSinceStart = (frame - declaration.startFrame).toDouble() / fps
-    val trimStartSeconds = declaration.trimStartFrame.toDouble() / fps
-    var position = trimStartSeconds + secondsSinceStart * declaration.playbackRate
-    val trimEndSeconds = declaration.trimEndFrame?.let { it.toDouble() / fps }
-    if (trimEndSeconds != null) {
-        position = position.coerceAtMost(trimEndSeconds)
-    }
-    return position
+    val position = declaration.trimStartFrame / fps.toDouble() + secondsSinceStart * declaration.playbackRate
+    val trimEndSeconds = declaration.trimEndFrame?.toDouble()?.let { it / fps }
+    return trimEndSeconds?.let { position.coerceAtMost(it) } ?: position
 }
 
 /**
@@ -98,7 +95,7 @@ internal class PreviewAudioController(
     ) {
         // A jump of more than one frame indicates a seek/scrub rather than
         // normal playback advance; seek the audio to the new frame's time.
-        val isSeek = lastFrame != Int.MIN_VALUE && kotlin.math.abs(frame - lastFrame) > 1
+        val isSeek = lastFrame != Int.MIN_VALUE && abs(frame - lastFrame) > 1
         val isPlayStart = playing && !lastPlaying
         lastFrame = frame
         lastPlaying = playing

@@ -82,6 +82,10 @@ class FfmpegFrameRenderer(
 
         val command = buildPipeFfmpegCommandWithInputs(ffmpeg, composition, outputPath, toAudioInputs(audioTracks, collector))
 
+        // The pre-scan pass used a throwaway composition whose call-site tokens are
+        // now dead; clear so the real pass registers each declaration exactly once.
+        collector.clear()
+
         val process = withContext(Dispatchers.IO) {
             ProcessBuilder(command)
                 .redirectErrorStream(true)
@@ -295,7 +299,7 @@ class FfmpegFrameRenderer(
         // Build filter_complex: trim, rate, delay each audio input to its start
         // frame, apply volume, then mix
         val (filterComplex, mapArgs) = buildAudioFilter(composition.fps, audioInputs)
-        if (filterComplex != null) {
+        if (filterComplex.isNotEmpty()) {
             args += listOf("-filter_complex", filterComplex)
             args += mapArgs
         }
@@ -343,7 +347,7 @@ class FfmpegFrameRenderer(
         }
 
         val (filterComplex, mapArgs) = buildAudioFilter(composition.fps, audioInputs)
-        if (filterComplex != null) {
+        if (filterComplex.isNotEmpty()) {
             args += listOf("-filter_complex", filterComplex)
             args += mapArgs
         }
@@ -365,13 +369,13 @@ class FfmpegFrameRenderer(
      *
      * Each input is trimmed (atrim), rate-adjusted (atempo), delayed to its
      * start frame (adelay) and volume-adjusted (volume), then all inputs are
-     * mixed with amix. Returns null when there are no audio inputs.
+     * mixed with amix. Returns an empty filter when there are no audio inputs.
      */
     private fun buildAudioFilter(
         fps: Int,
         audioInputs: List<AudioInput>,
-    ): Pair<String?, List<String>> {
-        if (audioInputs.isEmpty()) return null to emptyList()
+    ): Pair<String, List<String>> {
+        if (audioInputs.isEmpty()) return "" to emptyList()
 
         val filterParts = mutableListOf<String>()
         val mixInputs = mutableListOf<String>()
