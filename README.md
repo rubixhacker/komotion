@@ -72,7 +72,7 @@ val frame = currentFrame()                  // 0-based frame index
 val comp = LocalComposition.current         // width, height, fps, durationInFrames
 ```
 
-`LocalFrame` is the underlying composition local if you need it directly (for example inside a `Freeze`), but prefer `currentFrame()`.
+`LocalFrame` is the underlying composition local, read by `currentFrame()`. Use it directly only when you need the frame outside a composable context; otherwise prefer `currentFrame()`.
 
 ### AbsoluteFill
 
@@ -230,8 +230,11 @@ InterpolateOptions(
 )
 ```
 
-`interpolateFloats(frame, listOf(0, 20), listOf(floatArrayOf(0f, 0f), floatArrayOf(100f, 50f)))`
-interpolates every component of a `FloatArray` independently.
+`interpolateFloats` interpolates every component of a `FloatArray` independently:
+
+```kotlin
+interpolateFloats(frame, listOf(0, 20), listOf(floatArrayOf(0f, 0f), floatArrayOf(100f, 50f)))
+```
 
 ### Spring Easing
 
@@ -406,7 +409,7 @@ val job: RenderJob = renderer.renderAsync(
 
 ## Migration from 0.4.x
 
-The changes below are the complete set of breaking changes since 0.4.0.
+The changes below are the complete set of breaking changes since 0.4.0. The published 0.4.1 still has the 0.4.x API; the new API described here is not yet published and will ship as 0.5.0.
 
 ### `interpolate` family: range-based to keyframe-based
 
