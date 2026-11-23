@@ -46,6 +46,8 @@ class MediaExportTest {
 
         // /a.wav: trim 5..20 frames at 30 fps, 2x rate, start at frame 30 (1000 ms), half volume
         assertTrue(filter.contains("atrim=start=0.16666666666666666:end=0.6666666666666666"), filter)
+        // Timestamps are reset after the trim so adelay alone sets the start frame
+        assertTrue(filter.contains("asetpts=PTS-STARTPTS"), filter)
         assertTrue(filter.contains("atempo=2.0"), filter)
         assertTrue(filter.contains("adelay=1000|1000"), filter)
         assertTrue(filter.contains("volume=0.5"), filter)
@@ -67,63 +69,31 @@ class MediaExportTest {
 
         val wav = generateTestWav()
 
-        val outputFile = File.createTempFile("komotion-media-", ".mp4")
-        outputFile.deleteOnExit()
+        for (mode in listOf(RenderMode.PngSequence, RenderMode.Pipe)) {
+            val outputFile = File.createTempFile("komotion-media-$mode-", ".mp4")
+            outputFile.deleteOnExit()
 
-        val composition = Composition(width = 320, height = 240, durationInFrames = 10, fps = 30)
-        val content: @Composable () -> Unit = {
-            Box(Modifier.fillMaxSize().background(Color.Black))
-            Audio(file = wav.absolutePath)
-        }
-
-        runBlocking {
-            withContext(Dispatchers.Main) {
-                FfmpegFrameRenderer(renderMode = RenderMode.PngSequence)
-                    .render(
-                        composition = composition,
-                        outputPath = outputFile.absolutePath,
-                        content = content,
-                    )
+            val composition = Composition(width = 320, height = 240, durationInFrames = 10, fps = 30)
+            val content: @Composable () -> Unit = {
+                Box(Modifier.fillMaxSize().background(Color.Black))
+                Audio(file = wav.absolutePath)
             }
-        }
 
-        assertTrue(outputFile.exists(), "MP4 file should exist")
-        assertTrue(outputFile.length() > 0, "MP4 file should not be empty")
-        assertTrue(hasAudioStream(outputFile), "Expected an audio stream in the exported MP4")
-    }
-
-    @Test
-    fun `pipe mode export mixes audio declared inside the composition`() {
-        if (!ffmpegAvailable()) {
-            println("Skipping: FFmpeg not found on PATH")
-            return
-        }
-
-        val wav = generateTestWav()
-
-        val outputFile = File.createTempFile("komotion-media-pipe-", ".mp4")
-        outputFile.deleteOnExit()
-
-        val composition = Composition(width = 320, height = 240, durationInFrames = 10, fps = 30)
-        val content: @Composable () -> Unit = {
-            Box(Modifier.fillMaxSize().background(Color.Black))
-            Audio(file = wav.absolutePath)
-        }
-
-        runBlocking {
-            withContext(Dispatchers.Main) {
-                FfmpegFrameRenderer(renderMode = RenderMode.Pipe, workerCount = 2)
-                    .render(
-                        composition = composition,
-                        outputPath = outputFile.absolutePath,
-                        content = content,
-                    )
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    FfmpegFrameRenderer(renderMode = mode, workerCount = 2)
+                        .render(
+                            composition = composition,
+                            outputPath = outputFile.absolutePath,
+                            content = content,
+                        )
+                }
             }
-        }
 
-        assertTrue(outputFile.exists(), "MP4 file should exist")
-        assertTrue(outputFile.length() > 0, "MP4 file should not be empty")
-        assertTrue(hasAudioStream(outputFile), "Expected an audio stream in the exported MP4")
+            assertTrue(outputFile.exists(), "$mode: MP4 file should exist")
+            assertTrue(outputFile.length() > 0, "$mode: MP4 file should not be empty")
+            assertTrue(hasAudioStream(outputFile), "$mode: Expected an audio stream in the exported MP4")
+        }
     }
 
     private fun ffmpegAvailable(): Boolean = try {

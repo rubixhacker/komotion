@@ -384,6 +384,9 @@ class FfmpegFrameRenderer(
             if (input.trimStartFrame > 0 || input.trimEndFrame != null) {
                 val end = input.trimEndFrame?.let { ":end=${it / fps.toDouble()}" } ?: ""
                 parts += "atrim=start=${input.trimStartFrame / fps.toDouble()}$end"
+                // atrim keeps the file's timestamps; reset them so adelay alone
+                // determines when the audio starts on the global timeline.
+                parts += "asetpts=PTS-STARTPTS"
             }
             if (input.playbackRate != 1f) {
                 parts += "atempo=${input.playbackRate}"
