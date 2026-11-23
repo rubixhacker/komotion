@@ -26,7 +26,7 @@ fun Audio(
 ): AudioMedia {
     val declaration = AudioMedia(
         file = file,
-        startFrame = registerStartFrame(startFrame),
+        startFrame = shiftStartFrame(startFrame),
         volume = volume,
         playbackRate = playbackRate,
         trimStartFrame = trimStartFrame,
@@ -60,7 +60,7 @@ fun Video(
 ): VideoMedia {
     val declaration = VideoMedia(
         file = file,
-        startFrame = registerStartFrame(startFrame),
+        startFrame = shiftStartFrame(startFrame),
         volume = volume,
         playbackRate = playbackRate,
         trimStartFrame = trimStartFrame,
@@ -93,7 +93,7 @@ fun Image(
 ): ImageMedia {
     val declaration = ImageMedia(
         file = file,
-        startFrame = registerStartFrame(startFrame),
+        startFrame = shiftStartFrame(startFrame),
         volume = volume,
         playbackRate = playbackRate,
         trimStartFrame = trimStartFrame,
@@ -109,7 +109,7 @@ fun Image(
  * Sequence onto the global timeline.
  */
 @Composable
-internal fun registerStartFrame(startFrame: Int): Int {
+internal fun shiftStartFrame(startFrame: Int): Int {
     val collector = LocalMediaCollector.current
     return collector.frame - LocalFrame.current + startFrame
 }
