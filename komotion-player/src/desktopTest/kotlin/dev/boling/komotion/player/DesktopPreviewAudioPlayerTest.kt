@@ -80,6 +80,23 @@ class DesktopPreviewAudioPlayerTest {
     }
 
     @Test
+    fun `play starts playback on a valid 16-bit WAV`() {
+        val file = tempWav("komotion-test-play", wavBytes(0.2))
+        val player = createPreviewAudioPlayer()
+        try {
+            player.load(file.absolutePath)
+            player.play()
+            // The WAV must actually be loaded and playback started (not just
+            // fail silently), so the preview audio is audible.
+            assertTrue(player.isPlaying, "play() must start playback")
+            player.pause()
+            assertFalse(player.isPlaying, "pause() must stop playback")
+        } finally {
+            player.dispose()
+        }
+    }
+
+    @Test
     fun `load accepts a 48 kHz stereo 16-bit PCM WAV`() {
         val file = tempWav("komotion-test-stereo", wavBytes(0.2, sampleRate = 48000, channels = 2))
         val player = createPreviewAudioPlayer()
