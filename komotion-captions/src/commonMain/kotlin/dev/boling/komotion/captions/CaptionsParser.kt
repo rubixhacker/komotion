@@ -50,7 +50,7 @@ fun parseVtt(text: String, fps: Int): List<Caption> {
  */
 fun parseCaptions(text: String, fps: Int): List<Caption> {
     val firstNonBlank = normalizeLines(text).firstOrNull { !it.isBlank() }
-    return if (firstNonBlank != null && firstNonBlank.startsWith("WEBVTT", ignoreCase = true)) {
+    return if (firstNonBlank?.startsWith("WEBVTT", ignoreCase = true) == true) {
         parseVtt(text, fps)
     } else {
         parseSrt(text, fps)
