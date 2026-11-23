@@ -16,7 +16,7 @@ Terminology follows [GLOSSARY.md](GLOSSARY.md); architectural decisions are reco
 
 | Module | Targets | Description |
 |--------|---------|-------------|
-| `komotion-core` | Android, iOS, Desktop, wasmJs | Composition model, frame-driven timing (`Sequence`, `Series`, `Freeze`, `Loop`, `TransitionSeries`), interpolation and springs |
+| `komotion-core` | Android, iOS, Desktop, wasmJs | Composition model, frame-driven timing (`Sequence`, `Series`, `Freeze`, `Loop`, `TransitionSeries`), interpolation, springs, font assets, deterministic randomness |
 | `komotion-player` | Android, iOS, Desktop, wasmJs | Embedded player with play/pause, scrub, loop, and frame counter |
 | `komotion-export-desktop` | Desktop (JVM) | MP4 export via FFmpeg with audio mixing and video frame extraction |
 | `komotion-theme` | Android, iOS, Desktop, wasmJs | Shared design tokens: `KomotionTheme` with colors, typography and shapes |
@@ -86,7 +86,7 @@ AbsoluteFill {
 
 ### Experimental APIs
 
-New timing primitives (`Series`, `TransitionSeries`, `Freeze`, `Loop`) are marked `@ExperimentalKomotionApi`. Opt in at the call site:
+New primitives (`Series`, `TransitionSeries`, `Freeze`, `Loop`, `FontAsset`/`KomotionFont`, and the `random`/`pick` family) are marked `@ExperimentalKomotionApi`. Opt in at the call site:
 
 ```kotlin
 @OptIn(ExperimentalKomotionApi::class)
@@ -275,6 +275,23 @@ val settleFrames = measureSpring(config, fps = 30, threshold = 0.01f)
 
 `springValue` and `spring` share one solver, so the value function and the easing curve never disagree.
 
+### Deterministic Randomness
+
+Procedural variation must also be a pure function of the frame: use the seeded random family (experimental) instead of unseeded `Random` calls:
+
+```kotlin
+@OptIn(ExperimentalKomotionApi::class)
+@Composable
+fun Particles() {
+    val phase = random("particle-1")          // same value on every frame
+    val jitter = randomPerFrame("particle-1") // different value on every frame
+    val color = pick("palette-1", listOf(Color.Red, Color.Green, Color.Blue))
+    val frameColor = pickPerFrame("palette-1", listOf(Color.Red, Color.Green, Color.Blue))
+}
+```
+
+`random(seed)` returns a deterministic `Double` in `[0.0, 1.0)` derived from `seed`; `pick(seed, list)` returns a deterministic element of `list`. `randomPerFrame(seed)` and `pickPerFrame(seed, list)` fold the current frame into the seed, so the same `(seed, frame)` pair always returns the same value while different frames return different values. Seeds may be a `String` or a `Long`.
+
 ## Media
 
 ### Audio Tracks
@@ -363,6 +380,26 @@ fun StyledTitle() {
 ```
 
 Override any token by passing a customized `KomotionTheme(...)` wrapper around your composition.
+
+### Custom Fonts
+
+Load a TTF/OTF font file and provide it to a subtree with `KomotionFont` (experimental):
+
+```kotlin
+@OptIn(ExperimentalKomotionApi::class)
+@Composable
+fun StyledTitle() {
+    val font = remember { FontAsset("fonts/Display.ttf") }
+    KomotionFont(font) {
+        Text(
+            text = "Komotion",
+            fontFamily = LocalFontFamily.current,
+        )
+    }
+}
+```
+
+`FontAsset` loads the file when it is constructed: on Android, iOS and Desktop, `path` is a path on the local file system; on wasmJs, it is a URL served alongside the app. A missing or unreadable file, or data that is not a font, throws `IllegalArgumentException` rather than silently falling back to a system font.
 
 ## Player
 
@@ -498,11 +535,11 @@ New: `springValue` and `measureSpring`, sharing the same solver as `spring` so t
 
 ### New experimental primitives
 
-`Series`, `TransitionSeries` (with `Fade`, `Slide`, `Wipe`, `Iris`, `ClockWipe`), `Freeze` and `Loop` are new since 0.4.0 and are marked `@ExperimentalKomotionApi` — use them with `@OptIn(ExperimentalKomotionApi::class)`.
+`Series`, `TransitionSeries` (with `Fade`, `Slide`, `Wipe`, `Iris`, `ClockWipe`), `Freeze`, `Loop`, font loading (`FontAsset`, `KomotionFont`, `LocalFontFamily`) and the deterministic randomness family (`random`, `randomPerFrame`, `pick`, `pickPerFrame`) are new since 0.4.0 and are marked `@ExperimentalKomotionApi` — use them with `@OptIn(ExperimentalKomotionApi::class)`.
 
 ### Module layout
 
-No published module was renamed or removed since 0.4.0; the Maven coordinates in [Installation](#installation) are unchanged. `komotion-core` now also hosts the timing primitives (`Sequence`, `Series`, `Freeze`, `Loop`, `TransitionSeries`) and the spring utilities, and `@ExperimentalKomotionApi` is a new opt-in annotation in `komotion-core`.
+No published module was renamed or removed since 0.4.0; the Maven coordinates in [Installation](#installation) are unchanged. `komotion-core` now also hosts the timing primitives (`Sequence`, `Series`, `Freeze`, `Loop`, `TransitionSeries`), the spring utilities, font loading (`FontAsset`, `KomotionFont`) and the deterministic randomness family, and `@ExperimentalKomotionApi` is a new opt-in annotation in `komotion-core`.
 
 ## Requirements
 
