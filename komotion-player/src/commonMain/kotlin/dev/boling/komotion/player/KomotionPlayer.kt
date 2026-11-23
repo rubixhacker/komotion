@@ -49,8 +49,9 @@ fun KomotionPlayer(
     require(composition.durationInFrames > 0) { "composition.durationInFrames must be positive" }
     require(playbackRate > 0f) { "playbackRate must be positive" }
 
-    val windowStart = inFrame?.coerceIn(0, composition.durationInFrames - 1) ?: 0
-    val windowEnd = outFrame?.coerceIn(windowStart, composition.durationInFrames - 1) ?: composition.durationInFrames - 1
+    val lastFrame = composition.durationInFrames - 1
+    val windowStart = inFrame?.coerceIn(0, lastFrame) ?: 0
+    val windowEnd = outFrame?.coerceIn(windowStart, lastFrame) ?: lastFrame
 
     var currentFrame by remember { mutableStateOf(initialFrame.coerceIn(windowStart, windowEnd)) }
     var isPlaying by remember { mutableStateOf(false) }
@@ -86,9 +87,21 @@ fun KomotionPlayer(
         }
     }
 
+    fun togglePlayback() {
+        if (isPlaying) pausePlayback() else startPlayback()
+    }
+
+    fun toggleMute() {
+        muted = !muted
+    }
+
+    fun toggleLoop() {
+        loopEnabled = !loopEnabled
+    }
+
     fun seek(frame: Int) {
         if (frame < 0 || frame >= composition.durationInFrames) {
-            val message = "Seek to frame $frame is outside the composition (0..${composition.durationInFrames - 1})"
+            val message = "Seek to frame $frame is outside the composition (0..$lastFrame)"
             error = message
             emit(KomotionPlayerEvent.Error(message))
             return
@@ -108,7 +121,14 @@ fun KomotionPlayer(
         if (!isPlaying) return@LaunchedEffect
         while (isPlaying) {
             val elapsed = mark.elapsedNow()
-            val frame = targetFrame(elapsed.inWholeMilliseconds, composition.fps, playbackRate, windowStart, windowEnd, loopEnabled)
+            val frame = targetFrame(
+                elapsed.inWholeMilliseconds,
+                composition.fps,
+                playbackRate,
+                windowStart,
+                windowEnd,
+                loopEnabled,
+            )
             if (frame != currentFrame) {
                 currentFrame = frame
                 emit(KomotionPlayerEvent.FrameUpdate(frame))
@@ -145,10 +165,10 @@ fun KomotionPlayer(
                 when (command) {
                     KomotionPlayerCommand.Play -> startPlayback()
                     KomotionPlayerCommand.Pause -> pausePlayback()
-                    KomotionPlayerCommand.Toggle -> if (isPlaying) pausePlayback() else startPlayback()
+                    KomotionPlayerCommand.Toggle -> togglePlayback()
                     is KomotionPlayerCommand.SeekTo -> seek(command.frame)
                     is KomotionPlayerCommand.SetVolume -> playerVolume = command.volume.coerceIn(0f, 1f)
-                    KomotionPlayerCommand.Mute -> muted = !muted
+                    KomotionPlayerCommand.Mute -> toggleMute()
                     KomotionPlayerCommand.RequestFullscreen -> fullscreen = true
                 }
             }
@@ -165,7 +185,7 @@ fun KomotionPlayer(
         Modifier.onPreviewKeyEvent { keyEvent ->
             when (keyEvent.key) {
                 Key.Spacebar -> {
-                    if (isPlaying) pausePlayback() else startPlayback()
+                    togglePlayback()
                     true
                 }
                 Key.DirectionLeft -> {
@@ -185,11 +205,11 @@ fun KomotionPlayer(
                     true
                 }
                 Key.M -> {
-                    muted = !muted
+                    toggleMute()
                     true
                 }
                 Key.L -> {
-                    loopEnabled = !loopEnabled
+                    toggleLoop()
                     true
                 }
                 Key.F -> {
@@ -228,17 +248,11 @@ fun KomotionPlayer(
                     isPlaying = isPlaying,
                     loop = loopEnabled,
                     fullscreen = fullscreen,
-                    onPlayPause = {
-                        if (isPlaying) {
-                            pausePlayback()
-                        } else {
-                            startPlayback()
-                        }
-                    },
+                    onPlayPause = { togglePlayback() },
                     onSkipToStart = { seek(windowStart) },
                     onSkipToEnd = { seek(windowEnd) },
                     onScrub = { seek(it) },
-                    onLoopToggle = { loopEnabled = !loopEnabled },
+                    onLoopToggle = { toggleLoop() },
                     onFullscreenToggle = { fullscreen = !fullscreen },
                 )
             }

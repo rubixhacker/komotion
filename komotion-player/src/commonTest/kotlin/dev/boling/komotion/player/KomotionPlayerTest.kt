@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performKeyPress
 import androidx.compose.ui.test.runComposeUiTest
 import dev.boling.komotion.core.Composition
 import dev.boling.komotion.core.CompositionEntry
+import dev.boling.komotion.core.CompositionRegistry
 import dev.boling.komotion.core.LocalFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -179,7 +180,7 @@ class KomotionPlayerTest {
             defaultProps = TitleProps("default"),
             content = { props -> observed = props },
         )
-        val registry = dev.boling.komotion.core.CompositionRegistry(listOf(entry))
+        val registry = CompositionRegistry(listOf(entry))
 
         setContent {
             KomotionPlayer(
@@ -203,7 +204,7 @@ class KomotionPlayerTest {
             defaultProps = TitleProps("default"),
             content = { props -> observed = props },
         )
-        val registry = dev.boling.komotion.core.CompositionRegistry(listOf(entry))
+        val registry = CompositionRegistry(listOf(entry))
 
         setContent {
             KomotionPlayer(
