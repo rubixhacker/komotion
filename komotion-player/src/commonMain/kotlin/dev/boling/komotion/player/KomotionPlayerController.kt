@@ -33,8 +33,8 @@ class KomotionPlayerController(
     initialState: KomotionPlayerState = KomotionPlayerState(),
 ) {
     /**
-     * Internal: the player composable publishes its state through this flow
-     * and reads it back as [state].
+     * Internal: the player composable publishes its state to this flow;
+     * readers observe it as [state].
      */
     internal val _state = MutableStateFlow(initialState)
 
