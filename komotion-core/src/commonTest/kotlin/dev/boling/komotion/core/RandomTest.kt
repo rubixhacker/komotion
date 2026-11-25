@@ -132,4 +132,158 @@ class RandomTest {
             }
         }
     }
+
+    @Test
+    fun `randomInRange int bounds are inclusive over many seeds`() = runComposeUiTest {
+        val range = 10..20
+        repeat(1000) { i ->
+            val fromString = randomInRange("seed-$i", range)
+            val fromLong = randomInRange(i.toLong(), range)
+            assertTrue(fromString in range, "string seed out of range: $fromString")
+            assertTrue(fromLong in range, "long seed out of range: $fromLong")
+        }
+        val perFrameValues = ArrayList<Int>(4)
+        setContent {
+            CompositionLocalProvider(LocalFrame provides 42) {
+                perFrameValues.add(randomInRangePerFrame("seed-1", range))
+                perFrameValues.add(randomInRangePerFrame(42L, range))
+            }
+            CompositionLocalProvider(LocalFrame provides 43) {
+                perFrameValues.add(randomInRangePerFrame("seed-1", range))
+                perFrameValues.add(randomInRangePerFrame(42L, range))
+            }
+        }
+        perFrameValues.forEach { value ->
+            assertTrue(value in range, "per-frame value out of range: $value")
+        }
+    }
+
+    @Test
+    fun `randomInRange int range covers both ends across many seeds`() {
+        val range = 10..20
+        val results = IntArray(2000)
+        repeat(1000) { i ->
+            results[i] = randomInRange("seed-$i", range)
+            results[i + 1000] = randomInRange(i.toLong(), range)
+        }
+        assertTrue(results.any { it == range.first }, "range.first ${range.first} never drawn")
+        assertTrue(results.any { it == range.last }, "range.last ${range.last} never drawn")
+    }
+
+    @Test
+    fun `randomInRange float range is lower-inclusive upper-exclusive over many seeds`() = runComposeUiTest {
+        val range = 1.0f..5.0f
+        repeat(1000) { i ->
+            val fromString = randomInRange("seed-$i", range)
+            val fromLong = randomInRange(i.toLong(), range)
+            assertTrue(
+                fromString >= range.start && fromString < range.endInclusive,
+                "string seed out of range: $fromString"
+            )
+            assertTrue(
+                fromLong >= range.start && fromLong < range.endInclusive,
+                "long seed out of range: $fromLong"
+            )
+        }
+        val perFrameValues = ArrayList<Float>(4)
+        setContent {
+            CompositionLocalProvider(LocalFrame provides 42) {
+                perFrameValues.add(randomInRangePerFrame("seed-1", range))
+                perFrameValues.add(randomInRangePerFrame(42L, range))
+            }
+            CompositionLocalProvider(LocalFrame provides 43) {
+                perFrameValues.add(randomInRangePerFrame("seed-1", range))
+                perFrameValues.add(randomInRangePerFrame(42L, range))
+            }
+        }
+        perFrameValues.forEach { value ->
+            assertTrue(
+                value >= range.start && value < range.endInclusive,
+                "per-frame value out of range: $value"
+            )
+        }
+    }
+
+    @Test
+    fun `empty int range is rejected with IllegalArgumentException`() {
+        val empty = 10..9
+        val stringError = assertFailsWith<IllegalArgumentException> { randomInRange("seed-1", empty) }
+        assertTrue(stringError.message.orEmpty().contains("must not be empty"), "unexpected message: ${stringError.message}")
+        val longError = assertFailsWith<IllegalArgumentException> { randomInRange(42L, empty) }
+        assertTrue(longError.message.orEmpty().contains("must not be empty"), "unexpected message: ${longError.message}")
+    }
+
+    @Test
+    fun `empty float range is rejected with IllegalArgumentException`() {
+        val empty = 5.0f..1.0f
+        val stringError = assertFailsWith<IllegalArgumentException> { randomInRange("seed-1", empty) }
+        assertTrue(stringError.message.orEmpty().contains("must not be empty"), "unexpected message: ${stringError.message}")
+        val longError = assertFailsWith<IllegalArgumentException> { randomInRange(42L, empty) }
+        assertTrue(longError.message.orEmpty().contains("must not be empty"), "unexpected message: ${longError.message}")
+    }
+
+    @Test
+    fun `empty range is rejected for per-frame overloads`() = runComposeUiTest {
+        val emptyInt = 10..9
+        val emptyFloat = 5.0f..1.0f
+        setContent {
+            CompositionLocalProvider(LocalFrame provides 42) {
+                assertFailsWith<IllegalArgumentException> { randomInRangePerFrame("seed-1", emptyInt) }
+                assertFailsWith<IllegalArgumentException> { randomInRangePerFrame(42L, emptyInt) }
+                assertFailsWith<IllegalArgumentException> { randomInRangePerFrame("seed-1", emptyFloat) }
+                assertFailsWith<IllegalArgumentException> { randomInRangePerFrame(42L, emptyFloat) }
+            }
+        }
+    }
+
+    @Test
+    fun `single-point ranges return the single value`() {
+        assertEquals(5, randomInRange("seed-1", 5..5))
+        assertEquals(5, randomInRange(42L, 5..5))
+        assertEquals(1.0f, randomInRange("seed-1", 1.0f..1.0f))
+        assertEquals(1.0f, randomInRange(42L, 1.0f..1.0f))
+    }
+
+    @Test
+    fun `randomInRangePerFrame is reproducible for the same seed and frame`() = runComposeUiTest {
+        val intRange = 10..20
+        val floatRange = 1.0f..5.0f
+        val first = ArrayList<Any>(4)
+        val second = ArrayList<Any>(4)
+        setContent {
+            CompositionLocalProvider(LocalFrame provides 42) {
+                first.add(randomInRangePerFrame("seed-1", intRange))
+                first.add(randomInRangePerFrame(42L, intRange))
+                first.add(randomInRangePerFrame("seed-1", floatRange))
+                first.add(randomInRangePerFrame(42L, floatRange))
+            }
+            CompositionLocalProvider(LocalFrame provides 42) {
+                second.add(randomInRangePerFrame("seed-1", intRange))
+                second.add(randomInRangePerFrame(42L, intRange))
+                second.add(randomInRangePerFrame("seed-1", floatRange))
+                second.add(randomInRangePerFrame(42L, floatRange))
+            }
+        }
+        assertEquals(first, second)
+    }
+
+    @Test
+    fun `randomInRangePerFrame produces distinct values across frames`() = runComposeUiTest {
+        val intRange = 0..1_000_000_000
+        val floatRange = 0f..1_000_000_000f
+        val frame42 = ArrayList<Any>(2)
+        val frame43 = ArrayList<Any>(2)
+        setContent {
+            CompositionLocalProvider(LocalFrame provides 42) {
+                frame42.add(randomInRangePerFrame("seed-1", intRange))
+                frame42.add(randomInRangePerFrame("seed-1", floatRange))
+            }
+            CompositionLocalProvider(LocalFrame provides 43) {
+                frame43.add(randomInRangePerFrame("seed-1", intRange))
+                frame43.add(randomInRangePerFrame("seed-1", floatRange))
+            }
+        }
+        assertNotEquals(frame42[0], frame43[0], "int per-frame value did not change across frames")
+        assertNotEquals(frame42[1], frame43[1], "float per-frame value did not change across frames")
+    }
 }
