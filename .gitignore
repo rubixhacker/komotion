@@ -4,4 +4,5 @@ local.properties
 android-sdk/
 .kotlin/
 .superpowers/
+.sandcastle/
 docs/superpowers/

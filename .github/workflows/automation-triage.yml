@@ -1,0 +1,19 @@
+name: Automation Triage Dispatch
+
+# Thin public event adapter for the private triage runtime.
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  enqueue:
+    if: github.repository == 'rubixhacker/komotion'
+    runs-on: [self-hosted, sandcastle-dispatch]
+    timeout-minutes: 2
+    steps:
+      - name: Queue an event for the triage lane
+        shell: bash
+        run: bash "${SANDCASTLE_RUNTIME_DIR:-$HOME/Workspace/komotion-factory}/scripts/ci/sandcastle-enqueue.sh" triage

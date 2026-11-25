@@ -9,10 +9,11 @@ on:
 jobs:
   test:
     name: Run tests and compile all targets
+    if: github.repository == 'rubixhacker/komotion'
     # macOS is the only runner that can compile the iOS targets. The image
     # also ships Xcode and a license-accepted Android SDK, so every target
-    # in every module compiles here. The factory's delivery gate runs the
-    # same command on its macOS host.
+    # in every module compiles here. The local delivery gate runs the same
+    # command on its macOS host.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

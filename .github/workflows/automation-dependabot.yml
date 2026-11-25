@@ -1,0 +1,35 @@
+name: Automation Dependabot Dispatch
+
+# Thin public event adapter for the private dependency lane.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    workflows:
+      - CI
+    types: [completed]
+    branches:
+      - 'dependabot/**'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  enqueue:
+    if: >-
+      github.repository == 'rubixhacker/komotion' &&
+      (github.event_name != 'pull_request_target' ||
+       (github.event.pull_request.user.login == 'dependabot[bot]' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        !github.event.pull_request.draft)) &&
+      (github.event_name != 'workflow_run' ||
+       startsWith(github.event.workflow_run.head_branch, 'dependabot/'))
+    runs-on: [self-hosted, sandcastle-dispatch]
+    timeout-minutes: 2
+    steps:
+      - name: Queue an event for the local dependency service
+        shell: bash
+        run: bash "${SANDCASTLE_RUNTIME_DIR:-$HOME/Workspace/komotion-factory}/scripts/ci/sandcastle-enqueue.sh" dependabot

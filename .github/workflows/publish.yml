@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     name: Run tests
+    if: github.repository == 'rubixhacker/komotion'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +26,7 @@ jobs:
   publish:
     name: Publish to Maven Central
     needs: test
+    if: github.repository == 'rubixhacker/komotion'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
