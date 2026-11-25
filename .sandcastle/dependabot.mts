@@ -11,10 +11,11 @@
 
 import { execFileSync } from "node:child_process";
 import { z } from "zod";
-import { resolve } from "node:path";
-import { acquireLock } from "./lock.mts";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { enterFactoryLock, factoryLockPath } from "./lock.mjs";
 
-const root = resolve(process.cwd());
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 try {
   process.loadEnvFile(resolve(root, ".sandcastle/.env"));
 } catch (error) {
@@ -63,11 +64,7 @@ if (process.argv.includes("--check")) {
   process.exit(0);
 }
 
-const release = acquireLock(root, "dependabot");
-if (release === null) {
-  console.log("dependabot: another pass is running; not starting a new one");
-  process.exit(75);
-}
+enterFactoryLock(factoryLockPath("dependabot.lock"), fileURLToPath(import.meta.url));
 
 type CheckState = "green" | "red" | "pending";
 
@@ -148,6 +145,4 @@ main()
     console.error(`dependabot: pass failed: ${String(error)}`);
     process.exitCode = 1;
   })
-  .finally(() => {
-    release();
-  });
+

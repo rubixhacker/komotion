@@ -20,12 +20,17 @@
     <string>/opt/homebrew/opt/openjdk@21/bin:/opt/homebrew/bin:__HOME__/.opencode/bin:__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>TZ</key>
     <string>UTC</string>
-    <key>SANDCASTLE_RUNTIME_DIR</key>
-    <string>__HOME__/Workspace/komotion-factory</string>
+    <key>DEVELOPER_DIR</key>
+    <string>/Applications/Xcode.app/Contents/Developer</string>
+    <key>SANDCASTLE_DEDICATED_RUNTIME</key>
+    <string>1</string>
+    <key>SANDCASTLE_LOCK_DIR</key>
+    <string>__HOME__/.local/share/komotion-locks</string>
+    <key>SANDCASTLE_MOBAI</key>
+    <string>false</string>
   </dict>
   __WATCHPATHS__
-  <key>StartInterval</key>
-  <integer>__INTERVAL__</integer>
+  __INTERVAL__
   <key>RunAtLoad</key>
   <__RUNATLOAD__/>
   <key>StandardOutPath</key>

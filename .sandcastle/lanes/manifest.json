@@ -1,0 +1,50 @@
+{
+  "$comment": "The single definition of a scheduled Sandcastle lane. The installer and the lane wrapper read this file at run time; lane-wiring.mts checks the package scripts, lane docs and README rows against it. Add a lane here, with its entry file, doc and package scripts, and the gate rejects the branch until every surface is wired.",
+  "lanes": [
+    {
+      "name": "factory",
+      "entry": "drain",
+      "interval": null,
+      "runAtLoad": true,
+      "watchPath": ".sandcastle/logs/factory-events",
+      "doc": "lanes/factory.md",
+      "packageScript": "drain",
+      "checkScript": null,
+      "readme": {
+        "title": "Issue factory",
+        "entry": "main.mts / drain.mts",
+        "writesTo": "GitHub issues and pull requests"
+      }
+    },
+    {
+      "name": "dependabot",
+      "entry": "dependabot",
+      "interval": 1800,
+      "runAtLoad": true,
+      "watchPath": ".sandcastle/logs/dependabot-events",
+      "doc": "lanes/dependabot.md",
+      "packageScript": "dependabot",
+      "checkScript": "dependabot:check",
+      "readme": {
+        "title": "Dependabot watchdog",
+        "entry": "dependabot.mts",
+        "writesTo": "Dependabot pull requests"
+      }
+    },
+    {
+      "name": "triage",
+      "entry": "triage",
+      "interval": null,
+      "runAtLoad": false,
+      "watchPath": ".sandcastle/logs/triage-events",
+      "doc": "lanes/triage.md",
+      "packageScript": "triage",
+      "checkScript": "triage:check",
+      "readme": {
+        "title": "GitHub issue triage",
+        "entry": "triage.mts",
+        "writesTo": "issue comments and state labels"
+      }
+    }
+  ]
+}

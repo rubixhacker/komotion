@@ -1,0 +1,3 @@
+#!/bin/sh
+# See ../README.md. Runs from any directory inside the worktree.
+exec node "$(dirname "$0")/../cli/find-symbol.mts" "$@"

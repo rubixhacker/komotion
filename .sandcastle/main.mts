@@ -17,13 +17,33 @@
 import * as sandcastle from "@ai-hero/sandcastle";
 import { z } from "zod";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { acquireLock } from "./lock.mts";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { enterFactoryLock, factoryLockPath } from "./lock.mjs";
 import { ghCommandFailures, promptArgFailures } from "./check.mts";
 import { factorySandbox } from "./macos.mts";
+import {
+  createPiAgentDir,
+  factoryAgent,
+  type FactoryAgent,
+  FACTORY_AGENTS,
+  DEFAULT_FACTORY_AGENT,
+} from "./agent-provider.mjs";
+import { acknowledgeEvents, pendingEvents } from "./events.mjs";
+import { armFactoryPr, autoMergePolicyFromEnv } from "./arm-merge.mjs";
+import { noRebaseCommitEscalation } from "./ci-sweep.mjs";
+import { alertOperator } from "./operator-alert.mjs";
+import {
+  conflictRepairContext,
+  rebaseFault,
+  reconcileToPrHead,
+  startConflictRebase,
+} from "./conflict-repair.mjs";
 
-const root = resolve(process.cwd());
+// The entry point may be started from the repo root (launchd) or from
+// .sandcastle (npm scripts): always resolve the repository from this file.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 try {
   process.loadEnvFile(resolve(root, ".sandcastle/.env"));
 } catch (error) {
@@ -46,6 +66,9 @@ const config = z
     HANDOFF_LABEL: z.string().default("ready-for-interactive-agent"),
     // The agent model.
     SANDCASTLE_MODEL: z.string().default("vllm/Qwen3.8"),
+    // The CLI that authors tickets and repairs branches. Host review stays
+    // separate; pi is the default and OpenCode is the control route.
+    SANDCASTLE_AGENT: z.enum(FACTORY_AGENTS).default(DEFAULT_FACTORY_AGENT),
     // The OpenAI-compatible endpoint that serves the model.
     VLLM_BASE_URL: z.url().default("http://192.168.1.3:18982/v1"),
     // The new tickets one pass may start.
@@ -67,6 +90,30 @@ const config = z
   .parse(process.env);
 
 const agentModel = config.SANDCASTLE_MODEL;
+const agentKind: FactoryAgent = config.SANDCASTLE_AGENT;
+
+/**
+ * Pi reads its provider catalog, skills, sessions and shell policy from one
+ * directory. It is built once per process and mounted writable into each
+ * sandbox; the OpenCode control route uses the in-tree agent directory instead.
+ */
+const piAgentDir =
+  agentKind === "pi"
+    ? createPiAgentDir({
+        root,
+        models: [agentModel],
+        vllmBaseUrl: config.VLLM_BASE_URL,
+        keyPath: resolve(process.env.HOME ?? "", ".config/sandcastle/opencode-go.key"),
+      })
+    : null;
+
+function passSandbox() {
+  return factorySandbox(
+    piAgentDir === null
+      ? []
+      : [{ hostPath: piAgentDir, sandboxPath: piAgentDir, readonly: false }],
+  );
+}
 
 /**
  * The env a sandboxed agent run needs to find the model: the vLLM provider
@@ -77,6 +124,7 @@ function agentRunEnv(): Record<string, string> {
   return {
     OPENCODE_CONFIG_CONTENT: readFileSync(resolve(root, ".sandcastle/opencode.json"), "utf8"),
     VLLM_BASE_URL: config.VLLM_BASE_URL,
+    ...(piAgentDir === null ? {} : { PI_CODING_AGENT_DIR: piAgentDir }),
   };
 }
 
@@ -289,16 +337,25 @@ function check(): void {
   } catch {
     failures.push(`vLLM at ${config.VLLM_BASE_URL} is not reachable`);
   }
-  try {
-    execFileSync("opencode", ["--version"], { encoding: "utf8" });
-  } catch {
-    failures.push("opencode is not on PATH");
+  if (config.SANDCASTLE_AGENT === "pi") {
+    try {
+      execFileSync("pi", ["--version"], { encoding: "utf8" });
+    } catch {
+      failures.push("pi is not on PATH");
+    }
+  } else {
+    try {
+      execFileSync("opencode", ["--version"], { encoding: "utf8" });
+    } catch {
+      failures.push("opencode is not on PATH");
+    }
   }
   try {
     execFileSync("java", ["-version"], { encoding: "utf8" });
   } catch {
     failures.push("java is not on PATH");
   }
+  if (piAgentDir !== null) rmSync(piAgentDir, { recursive: true, force: true });
   if (failures.length > 0) {
     for (const failure of failures) console.error(`check: ${failure}`);
     process.exit(1);
@@ -315,11 +372,178 @@ if (process.argv.includes("--check")) {
 // One pass
 // ---------------------------------------------------------------------------
 
-const release = acquireLock(root, "factory");
-if (release === null) {
-  // Another pass is already running. The lane wrapper reads 75 as clean.
-  console.log("factory: another pass is running; not starting a new one");
-  process.exit(75);
+// A machine-wide lease, held by a child process for this pass's lifetime,
+// prevents a second checkout from running a second factory at the same time.
+enterFactoryLock(factoryLockPath("factory.lock"), fileURLToPath(import.meta.url));
+
+// Markers that arrived before this pass started describe state this pass reads
+// directly from GitHub. Acknowledge them once; an event that arrives while the
+// pass is running survives in the directory and wakes the drain's next pass.
+const factoryEvents = resolve(root, ".sandcastle/logs/factory-events");
+acknowledgeEvents(factoryEvents, pendingEvents(factoryEvents));
+
+// ---------------------------------------------------------------------------
+// Event-driven CI repair worker. The standalone `ci-repair.mts` CLI decides
+// which pull request needs work and spawns this process with the exact head it
+// decided on. Re-reading the PR here, and refusing a head that moved, keeps a
+// stale event from overwriting work delivered after it was queued.
+// ---------------------------------------------------------------------------
+
+interface CiRepairArgs {
+  pr: number;
+  head: string;
+  conflict: boolean;
+  contextFile: string | null;
+  startedFile: string | null;
+}
+
+function ciRepairArgs(): CiRepairArgs | null {
+  const index = process.argv.indexOf("--ci-repair-perform");
+  if (index === -1) return null;
+  const value = (flag: string): string | null => {
+    const at = process.argv.indexOf(flag);
+    return at === -1 ? null : (process.argv[at + 1] ?? null);
+  };
+  const pr = Number(process.argv[index + 1]);
+  const head = value("--ci-repair-head");
+  if (!Number.isInteger(pr) || pr <= 0 || head === null)
+    throw new Error("usage: --ci-repair-perform <pr> --ci-repair-head <sha>");
+  return {
+    pr,
+    head,
+    conflict: process.argv.includes("--conflict"),
+    contextFile: value("--ci-repair-context"),
+    startedFile: value("--ci-repair-started"),
+  };
+}
+
+async function performCiRepair(args: CiRepairArgs): Promise<void> {
+  const pr = ghJson<{ headRefName: string; headRefOid: string; title: string }>([
+    "pr", "view", String(args.pr), "--repo", config.GITHUB_REPO,
+    "--json", "headRefName,headRefOid,title",
+  ]);
+  if (pr.headRefOid !== args.head) {
+    console.log(`#${args.pr}: head moved to ${pr.headRefOid.slice(0, 7)}; leaving it alone`);
+    return;
+  }
+  const branch = pr.headRefName;
+  if (!branch.startsWith("sandcastle/issue-"))
+    throw new Error(`#${args.pr}: not a factory branch: ${branch}`);
+  const issue = Number(/^sandcastle\/issue-(\d+)$/.exec(branch)?.[1] ?? 0);
+
+  removeWorktreeHolding(branch);
+  const sandbox = await sandcastle.createSandbox({
+    branch,
+    baseBranch: "origin/main",
+    sandbox: passSandbox(),
+    cwd: root,
+    hooks: {
+      host: {
+        onWorktreeReady: [
+          {
+            command: `mkdir -p .sandcastle/agent && cp -R ${shellQuote(
+              resolve(root, ".sandcastle/agent"),
+            )}/. .sandcastle/agent`,
+          },
+        ],
+      },
+    },
+  });
+  try {
+    const tree = sandbox.worktreePath;
+    const mainHead = execFileSync("git", ["-C", root, "rev-parse", "origin/main"], {
+      encoding: "utf8",
+    }).trim();
+    const discarded = reconcileToPrHead(tree, branch, args.head);
+    if (discarded !== null)
+      console.log(`#${args.pr}: discarded local head ${discarded.slice(0, 7)} in favour of the PR head`);
+
+    const failureFile = `repair-failure-${issue}.txt`;
+    if (args.conflict) {
+      const messageFile = `.sandcastle/repair-message-${issue}.txt`;
+      const start = startConflictRebase(tree, branch, args.head, mainHead, messageFile);
+      if (start.state === "refused")
+        throw new Error(`#${args.pr}: conflict rebase refused: ${start.reason}`);
+      if (start.state === "conflicted") {
+        writeFileSync(
+          resolve(tree, ".sandcastle", failureFile),
+          conflictRepairContext({
+            prNumber: args.pr,
+            oldHead: args.head,
+            main: mainHead,
+            conflicted: start.conflicted,
+            messageFile,
+          }),
+        );
+      }
+    } else if (args.contextFile !== null) {
+      writeFileSync(
+        resolve(tree, ".sandcastle", failureFile),
+        readFileSync(args.contextFile, "utf8"),
+      );
+    }
+
+    // The CLI uses this marker to tell a worker that never started from one
+    // that started and failed. Write it only after the head guard passed.
+    if (args.startedFile !== null) {
+      mkdirSync(resolve(args.startedFile, ".."), { recursive: true });
+      writeFileSync(args.startedFile, "started\n");
+    }
+
+    const agentEnv = {
+      ...agentRunEnv(),
+      OPENCODE_CONFIG_DIR: `${tree}/.sandcastle/agent`,
+      OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: String(30 * 60_000),
+    };
+    const repaired = await sandbox.run({
+      name: `ci-repair #${args.pr}`,
+      maxIterations: 30,
+      agent: factoryAgent(agentModel, agentKind, agentEnv),
+      promptFile: "./.sandcastle/factory-repair-prompt.md",
+      promptArgs: {
+        ISSUE_NUMBER: String(issue),
+        TICKET_BRANCH: branch,
+        BASE_SHA: mainHead,
+        FAILURE_CONTEXT_FILE: failureFile,
+      },
+      signal: AbortSignal.timeout(config.SANDCASTLE_TICKET_BUDGET_MINUTES * 60_000),
+    });
+    if (repaired.commits.length === 0)
+      throw new Error(`#${args.pr}: repair agent made no commit`);
+    const fault = args.conflict
+      ? rebaseFault(tree, branch, mainHead, [])
+      : null;
+    if (fault !== null) throw new Error(`#${args.pr}: ${fault}`);
+    const [command, ...gateArgs] = config.GATE_COMMAND.split(" ");
+    if (command === undefined) throw new Error("GATE_COMMAND is empty");
+    execFileSync(command, gateArgs, {
+      cwd: tree,
+      timeout: config.GATE_MINUTES * 60_000,
+      encoding: "utf8",
+      stdio: "inherit",
+    });
+    execFileSync("git", ["-C", tree, "push", "--force-with-lease", "origin", branch], {
+      encoding: "utf8",
+    });
+    console.log(`#${args.pr}: repaired head pushed for re-review`);
+  } finally {
+    const closed = await sandbox.close();
+    if (closed.preservedWorktreePath)
+      execFileSync("git", ["-C", root, "worktree", "remove", "--force", closed.preservedWorktreePath], {
+        encoding: "utf8",
+        stdio: "ignore",
+      });
+  }
+}
+
+const repairArgs = ciRepairArgs();
+if (repairArgs !== null) {
+  try {
+    await performCiRepair(repairArgs);
+  } finally {
+    if (piAgentDir !== null) rmSync(piAgentDir, { recursive: true, force: true });
+  }
+  process.exit(0);
 }
 
 interface PlanIssue {
@@ -360,13 +584,10 @@ async function main(): Promise<void> {
   // Plan: pick the issues that can be worked in parallel right now.
   // -------------------------------------------------------------------------
   const plan = await sandcastle.run({
-    sandbox: factorySandbox(),
+    sandbox: passSandbox(),
     name: "planner",
     maxIterations: 1,
-    agent: sandcastle.opencode(agentModel, {
-      captureSessions: false,
-      env: agentRunEnv(),
-    }),
+    agent: factoryAgent(agentModel, agentKind, agentRunEnv()),
     promptFile: "./.sandcastle/plan-prompt.md",
     promptArgs: plannerPromptArgs(eligible),
     output: sandcastle.Output.object({ tag: "plan", schema: planSchema }),
@@ -411,11 +632,12 @@ async function pool<T>(
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (true) {
       const i = next++;
-      if (i >= items.length) break;
+      const item = items[i];
+      if (item === undefined) break;
       try {
-        settled[i] = await fn(items[i]);
+        settled[i] = await fn(item);
       } catch (error) {
-        console.error(`factory: ticket ${label(items[i])} failed: ${String(error)}`);
+        console.error(`factory: ticket ${label(item)} failed: ${String(error)}`);
       }
     }
   });
@@ -445,7 +667,7 @@ async function workTicket(
     sandbox = await sandcastle.createSandbox({
       branch,
       baseBranch: "origin/main",
-      sandbox: factorySandbox(),
+      sandbox: passSandbox(),
       cwd: root,
       hooks: {
         host: {
@@ -477,7 +699,7 @@ async function workTicket(
     const implement = await sandbox.run({
       name: `implementer #${issue.number}`,
       maxIterations: 100,
-      agent: sandcastle.opencode(agentModel, { captureSessions: false, env: agentEnv }),
+      agent: factoryAgent(agentModel, agentKind, agentEnv),
       promptFile: "./.sandcastle/implement-prompt.md",
       promptArgs: implementerPromptArgs(issue, branch, contextFile),
       signal: budgetSignal,
@@ -488,7 +710,7 @@ async function workTicket(
       const review = await sandbox.run({
         name: `reviewer #${issue.number}`,
         maxIterations: 1,
-        agent: sandcastle.opencode(agentModel, { captureSessions: false, env: agentEnv }),
+        agent: factoryAgent(agentModel, agentKind, agentEnv),
         promptFile: "./.sandcastle/review-prompt.md",
         // TARGET_BRANCH is a built-in prompt argument (the host's current
         // branch, which the runtime keeps at origin/main), so it cannot be
@@ -511,10 +733,11 @@ async function workTicket(
 
   // The quality gate is run by the orchestrator, not the agent: an agent
   // never gets to say "tests pass".
-  let gateFailed = false;
   if (hasWork) {
     try {
-      const gate = execFileSync(config.GATE_COMMAND.split(" ")[0], config.GATE_COMMAND.split(" ").slice(1), {
+      const [command, ...args] = config.GATE_COMMAND.split(" ");
+      if (command === undefined) throw new Error("GATE_COMMAND is empty");
+      const gate = execFileSync(command, args, {
         cwd: sandbox.worktreePath,
         timeout: config.GATE_MINUTES * 60_000,
         maxBuffer: 16 * 1024 * 1024,
@@ -522,7 +745,6 @@ async function workTicket(
       });
       void gate;
     } catch (error) {
-      gateFailed = true;
       failure = `gate ${config.GATE_COMMAND} failed: ${tail(String(error), 2000)}`;
     }
   }
@@ -682,9 +904,12 @@ function removeWorktreeHolding(branch: string): void {
   const lines = execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], {
     encoding: "utf8",
   }).split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === `branch ${branch}` && i > 0) {
-      execFileSync("git", ["-C", root, "worktree", "remove", "--force", lines[i - 1].slice("worktree ".length)], {
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const previous = lines[i - 1];
+    if (line === undefined || previous === undefined) continue;
+    if (line.trim() === `branch ${branch}`) {
+      execFileSync("git", ["-C", root, "worktree", "remove", "--force", previous.slice("worktree ".length)], {
         encoding: "utf8",
         stdio: "ignore",
       });
@@ -740,19 +965,55 @@ function rebaseBranch(branch: string): boolean {
   }
 }
 
-/** Rebase every open factory branch onto the latest main. */
+/** Conflict alerts already sent, keyed by PR and head. */
+function readAlertKeys(): Set<string> {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(strikesPath().replace("strikes.json", "ci-alerts.json"), "utf8"));
+    return new Set(Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeAlertKeys(keys: Set<string>): void {
+  mkdirSync(resolve(root, ".sandcastle/logs"), { recursive: true });
+  writeFileSync(
+    strikesPath().replace("strikes.json", "ci-alerts.json"),
+    `${JSON.stringify([...keys], null, 2)}\n`,
+  );
+}
+
+/** Rebase every open factory branch onto the latest main and arm green heads. */
 function rebaseOpenPrs(): void {
   execFileSync("git", ["-C", root, "fetch", "origin"], { encoding: "utf8" });
+  const head = execFileSync("git", ["-C", root, "rev-parse", "origin/main"], {
+    encoding: "utf8",
+  }).trim();
   for (const pr of openFactoryPrs()) {
     try {
       if (rebaseBranch(pr.headRefName)) {
         console.log(`  #${pr.number}: rebased onto main`);
       } else {
-        console.log(`  #${pr.number}: rebase conflicted; left for a human`);
+        // A conflict that survives the deterministic rebase is reported once
+        // per head: a branch left dirty without a human seeing it is the failure
+        // mode this monitoring exists to catch.
+        const issue = Number(/^sandcastle\/issue-(\d+)$/.exec(pr.headRefName)?.[1] ?? 0);
+        const escalation = noRebaseCommitEscalation(pr.number, issue, head, pr.headRefName);
+        const keys = readAlertKeys();
+        if (!keys.has(escalation.key)) {
+          keys.add(escalation.key);
+          writeAlertKeys(keys);
+          alertOperator(root, escalation.message);
+        }
+        console.log(`  #${pr.number}: rebase conflicted; escalated to a human`);
       }
+      // A green, clean head is armed from the sweep as well as from delivery,
+      // so a PR that was already open when this framework landed still merges.
+      const armed = armFactoryPr(root, pr.number, autoMergePolicyFromEnv());
+      if (armed.action === "armed") console.log(`  #${pr.number}: auto-merge armed`);
     } catch (error) {
       // one bad branch must not take the rest of the pass down
-      console.error(`  #${pr.number}: rebase failed: ${String(error)}`);
+      console.error(`  #${pr.number}: reconcile failed: ${String(error)}`);
     }
   }
 }
@@ -782,5 +1043,5 @@ main()
     process.exitCode = 1;
   })
   .finally(() => {
-    release();
+    if (piAgentDir !== null) rmSync(piAgentDir, { recursive: true, force: true });
   });
