@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import dev.boling.komotion.core.AudioTrack
 import dev.boling.komotion.core.Composition
 import dev.boling.komotion.core.FrameRenderer
+import dev.boling.komotion.core.Segment
+import dev.boling.komotion.core.validateSegments
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +26,20 @@ class FfmpegFrameRenderer(
     val preset: FfmpegPreset = FfmpegPreset.Medium,
     val renderMode: RenderMode = RenderMode.Pipe,
     val workerCount: Int = defaultWorkerCount(),
+    /**
+     * If non-null, the composition is downscaled before rendering.
+     * Enables a sub-10s render for layout iteration before committing to the
+     * full export. See [PreviewProfile].
+     */
+    val previewProfile: PreviewProfile? = null,
+    /**
+     * If non-null, runs FFmpeg's blackdetect against the finished file and
+     * throws [BlackFrameQcException] when stretches exceed
+     * [postRenderQc.allowedTotalSec]. Wires what used to be a manual,
+     * after-the-fact check into the pipeline so a busted render fails
+     * immediately.
+     */
+    val postRenderQc: PostRenderQc? = null,
 ) : FrameRenderer {
 
     override suspend fun render(
@@ -33,10 +49,50 @@ class FfmpegFrameRenderer(
         audioTracks: List<AudioTrack>,
         onProgress: (framesRendered: Int) -> Unit,
     ) {
+        val effectiveComposition = previewProfile?.apply(composition) ?: composition
         when (renderMode) {
-            RenderMode.Pipe -> renderPiped(composition, outputPath, content, audioTracks, onProgress)
-            RenderMode.PngSequence -> renderPngSequence(composition, outputPath, content, audioTracks, onProgress)
+            RenderMode.Pipe -> renderPiped(effectiveComposition, outputPath, content, audioTracks, onProgress)
+            RenderMode.PngSequence -> renderPngSequence(effectiveComposition, outputPath, content, audioTracks, onProgress)
         }
+        runPostRenderQc(outputPath)
+    }
+
+    /**
+     * Render with explicit segment metadata. Pre-render validation runs first;
+     * if [audioSegments] is non-empty its keys must cover `0 until segments.size`
+     * exactly — a mismatch throws [SegmentValidationException] *before* any
+     * frame is rendered, instead of silently producing a clipped or
+     * mistimed output. The audio map is unrolled into [AudioTrack]s using each
+     * segment's `from` as the start frame.
+     */
+    suspend fun renderWithSegments(
+        composition: Composition,
+        outputPath: String,
+        segments: List<Segment>,
+        audioSegments: Map<Int, AudioTrack> = emptyMap(),
+        content: @Composable () -> Unit,
+        onProgress: (framesRendered: Int) -> Unit = {},
+    ) {
+        validateSegments(composition, segments, audioSegments)
+        val tracks = if (audioSegments.isEmpty()) {
+            emptyList()
+        } else {
+            segments.sortedBy { it.index }.map { seg ->
+                audioSegments.getValue(seg.index).copy(startFrame = seg.from)
+            }
+        }
+        render(composition, outputPath, content, tracks, onProgress)
+    }
+
+    private fun runPostRenderQc(outputPath: String) {
+        val qc = postRenderQc ?: return
+        val detector = BlackFrameDetector(
+            ffmpegPath = ffmpegPath,
+            minDurationSec = qc.minDurationSec,
+            pixelThreshold = qc.pixelThreshold,
+            pictureRatio = qc.pictureRatio,
+        )
+        detector.assertNoBlackFrames(outputPath, allowedTotalSec = qc.allowedTotalSec)
     }
 
     private suspend fun renderPiped(
@@ -332,3 +388,15 @@ class FfmpegFrameRenderer(
 
 private fun defaultWorkerCount(): Int =
     (Runtime.getRuntime().availableProcessors() - 1).coerceIn(2, 8)
+
+/**
+ * Tunables for the post-render black-frame check. Defaults match common
+ * shipping criteria: any black run >= 0.05s counts as a defect, with no
+ * tolerance.
+ */
+data class PostRenderQc(
+    val minDurationSec: Double = 0.05,
+    val pixelThreshold: Double = 0.10,
+    val pictureRatio: Double = 0.98,
+    val allowedTotalSec: Double = 0.0,
+)
