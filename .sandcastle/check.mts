@@ -5,7 +5,9 @@
 // after a full planner-to-gate cycle of agent time. The check modes run
 // these validations before a pass starts.
 
-import { execFileSync } from "node:child_process";
+import { command, CommandError } from "./process.mts";
+
+export const GH_MAX_TAIL_BYTES = 16 * 1024 * 1024;
 
 /**
  * Prompt arguments the sandcastle runtime injects into every file-based
@@ -41,35 +43,34 @@ export function promptArgFailures(
  * a missing subcommand is the only failure that means the command does
  * not exist (`unknown command "x" for "gh y"`); other failures (missing
  * arguments, no repository context) mean the command exists. `probe` runs
- * the probe and must throw with the gh output on failure; the default
- * probe is a bare `gh <command...>`.
+ * the probe and must throw with the gh output on failure.
  */
-export function ghCommandFailures(
+export async function ghCommandFailures(
   commands: readonly (readonly string[])[],
-  probe: (command: readonly string[]) => void = (command) => {
+  probe: (command: readonly string[]) => Promise<unknown> = (args) =>
     // The probe's output is captured, not inherited: a failing probe's
     // error text goes into the error, not the lane's output.
-    execFileSync("gh", command, {
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-  },
-): string[] {
+    command("gh", [...args], { maxTailBytes: GH_MAX_TAIL_BYTES }),
+): Promise<string[]> {
   const failures: string[] = [];
-  for (const command of commands) {
+  for (const args of commands) {
     try {
-      probe(command);
+      await probe(args);
     } catch (error) {
       if (/unknown command /.test(childErrorOutput(error)))
-        failures.push(`gh has no '${command.join(" ")}' command`);
+        failures.push(`gh has no '${args.join(" ")}' command`);
     }
   }
   return failures;
 }
 
 /** The gh output carried by a failed child-process error. */
-function childErrorOutput(error: unknown): string {
+export function childErrorOutput(error: unknown): string {
+  if (error instanceof CommandError) {
+    const text = [error.stdout, error.stderr].join("\n").trim();
+    if (text !== "") return text;
+    return error.message;
+  }
   if (error instanceof Error) {
     const { stdout, stderr } = error as Error & {
       stdout?: string | Buffer;
@@ -80,6 +81,7 @@ function childErrorOutput(error: unknown): string {
       .join("\n")
       .trim();
     if (text !== "") return text;
+    return error.message;
   }
   return String(error);
 }

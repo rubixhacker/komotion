@@ -71,15 +71,15 @@ function ghProbe(valid: readonly (readonly string[])[]) {
   };
 }
 
-test("ghCommandFailures rejects a subcommand the installed gh does not have", () => {
-  const failures = ghCommandFailures(
+test("ghCommandFailures rejects a subcommand the installed gh does not have", async () => {
+  const failures = await ghCommandFailures(
     [["label", "add"], ["issue", "edit"]],
     ghProbe(FACTORY_GH_COMMANDS),
   );
   assert.deepEqual(failures, ["gh has no 'label add' command"]);
 });
 
-test("ghCommandFailures accepts subcommands the installed gh has", () => {
-  assert.deepEqual(ghCommandFailures(FACTORY_GH_COMMANDS, ghProbe(FACTORY_GH_COMMANDS)), []);
-  assert.deepEqual(ghCommandFailures(TRIAGE_GH_COMMANDS, ghProbe(TRIAGE_GH_COMMANDS)), []);
+test("ghCommandFailures accepts subcommands the installed gh has", async () => {
+  assert.deepEqual(await ghCommandFailures(FACTORY_GH_COMMANDS, ghProbe(FACTORY_GH_COMMANDS)), []);
+  assert.deepEqual(await ghCommandFailures(TRIAGE_GH_COMMANDS, ghProbe(TRIAGE_GH_COMMANDS)), []);
 });

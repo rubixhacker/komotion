@@ -64,7 +64,10 @@ consistency, and maintainability while preserving exact functionality.
 If you find improvements to make:
 
 1. Make the changes directly on this branch
-2. Run `./gradlew desktopTest` to ensure nothing is broken
+2. Run `.sandcastle/agent/bin/gradle desktopTest` to ensure nothing is broken.
+   Never call `gradlew` directly; it is denied. If the wrapper exits 75, the
+   heavy-work lock is busy: stop and report the review as deferred instead of
+   bypassing the wrapper.
 3. Commit describing the refinements
 
 If the code is already clean and well-structured, do nothing.

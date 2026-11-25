@@ -93,7 +93,8 @@ if [ "$action" = disable ]; then
 fi
 
 [ -f "$template" ] || { echo "missing $template" >&2; exit 1; }
-mkdir -p "$agents" "$runtime/.sandcastle/logs"
+heavy_state=${MACOS_HEAVY_WORK_STATE_DIR:-$HOME/.local/share/macos-heavy-work}
+mkdir -p "$agents" "$runtime/.sandcastle/logs" "$heavy_state"
 
 config=$(lane_config) || { echo "install-sandcastle-macos: cannot read $manifest" >&2; exit 1; }
 while IFS='|' read -r lane interval run_at_load watch; do
@@ -112,15 +113,41 @@ while IFS='|' read -r lane interval run_at_load watch; do
   fi
   HOME_DIR="$HOME" LANE="$lane" \
   RUNATLOAD="$run_at_load" WATCH_XML="$watch_xml" INTERVAL_XML="$interval_xml" TARGET="$target" \
-  TEMPLATE="$template" python3 - <<'PY'
+  TEMPLATE="$template" HEAVY_STATE_DIR="$heavy_state" \
+  HEAVY_GATE="${MACOS_HEAVY_WORK_GATE:-$HOME/.local/libexec/macos-heavy-work.mjs}" HEAVY_HELD="${MAC_HEAVY_WORK_HELD:-}" \
+  HEAVY_WAIT="${SANDCASTLE_HEAVY_WORK_WAIT_SECONDS:-}" \
+  HEAVY_TIMEOUT="${SANDCASTLE_HEAVY_WORK_TIMEOUT_SECONDS:-}" python3 - <<'PY'
 import os
 from pathlib import Path
+from xml.sax.saxutils import escape
+
+def plist_entry(key, value):
+    return f'    <key>{escape(key)}</key>\n    <string>{escape(value)}</string>'
+
 text = Path(os.environ["TEMPLATE"]).read_text()
 text = text.replace("__HOME__", os.environ["HOME_DIR"])
 text = text.replace("__LANE__", os.environ["LANE"])
 text = text.replace("  __INTERVAL__", os.environ["INTERVAL_XML"])
 text = text.replace("__RUNATLOAD__", os.environ["RUNATLOAD"])
 text = text.replace("  __WATCHPATHS__", os.environ["WATCH_XML"])
+
+heavy = [
+    plist_entry("MACOS_HEAVY_WORK_STATE_DIR", os.environ["HEAVY_STATE_DIR"]),
+    plist_entry("GIT_EDITOR", "true"),
+    plist_entry("GIT_SEQUENCE_EDITOR", "true"),
+    plist_entry("GIT_MERGE_AUTOEDIT", "no"),
+    plist_entry("GIT_TERMINAL_PROMPT", "0"),
+]
+for env_key, plist_key in (
+    ("HEAVY_GATE", "MACOS_HEAVY_WORK_GATE"),
+    ("HEAVY_HELD", "MAC_HEAVY_WORK_HELD"),
+    ("HEAVY_WAIT", "SANDCASTLE_HEAVY_WORK_WAIT_SECONDS"),
+    ("HEAVY_TIMEOUT", "SANDCASTLE_HEAVY_WORK_TIMEOUT_SECONDS"),
+):
+    value = os.environ.get(env_key, "")
+    if value:
+        heavy.append(plist_entry(plist_key, value))
+text = text.replace("  __HEAVY_ENV__", "\n".join(heavy))
 Path(os.environ["TARGET"]).write_text(text)
 PY
   plutil -lint "$target" >/dev/null || { echo "invalid plist $target" >&2; exit 1; }

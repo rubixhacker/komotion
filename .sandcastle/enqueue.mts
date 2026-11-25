@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { enqueueEvent, factoryEventKind, relevantEvent } from "./events.mjs";
+import { expireMarkers } from "./events-cli.mjs";
 import { FactoryError } from "./queue.mjs";
 
 const eventFile = process.env.GITHUB_EVENT_PATH;
@@ -13,6 +14,10 @@ if (!eventFile || !eventName)
 const lane = process.argv[2] ?? "dependabot";
 const payload: unknown = JSON.parse(readFileSync(eventFile, "utf8"));
 const logs = resolve(dirname(fileURLToPath(import.meta.url)), "logs");
+// A dispatch that arrives while the host is offline must not wake a lane days
+// later with stale GitHub state.
+if (lane === "factory" || lane === "triage" || lane === "dependabot")
+  expireMarkers(resolve(logs, `${lane}-events`));
 if (lane === "factory") {
   const kind = factoryEventKind(eventName, payload);
   if (kind === null) {

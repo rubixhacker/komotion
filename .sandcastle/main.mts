@@ -16,13 +16,20 @@
 
 import * as sandcastle from "@ai-hero/sandcastle";
 import { z } from "zod";
-import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { enterFactoryLock, factoryLockPath } from "./lock.mjs";
-import { ghCommandFailures, promptArgFailures } from "./check.mts";
+import { ghCommandFailures, GH_MAX_TAIL_BYTES, promptArgFailures } from "./check.mts";
+import { runHeavyWork } from "./heavy-work.mts";
 import { factorySandbox } from "./macos.mts";
+import {
+  command,
+  commandJson,
+  nonInteractiveGitEnv,
+  type CommandOptions,
+  type CommandResult,
+} from "./process.mts";
 import {
   createPiAgentDir,
   factoryAgent,
@@ -86,6 +93,10 @@ const config = z
     // (iOS, Android, wasmJs) fails the gate and is not delivered.
     GATE_COMMAND: z.string().default("./gradlew desktopTest compileAllTargets"),
     GATE_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
+    // Exit 75 from the heavy-work gate is a deferral: the ticket survives
+    // for the next pass and never collects a strike.
+    SANDCASTLE_HEAVY_WORK_WAIT_SECONDS: z.coerce.number().int().min(0).max(3600).default(300),
+    SANDCASTLE_GIT_TIMEOUT_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
   })
   .parse(process.env);
 
@@ -107,7 +118,7 @@ const piAgentDir =
       })
     : null;
 
-function passSandbox() {
+async function passSandbox() {
   return factorySandbox(
     piAgentDir === null
       ? []
@@ -133,23 +144,29 @@ function agentRunEnv(): Record<string, string> {
 // hides the host's gh login, and the factory reads and writes GitHub itself.
 // ---------------------------------------------------------------------------
 
-function gh(args: readonly string[]): string {
-  return execFileSync("gh", args, {
-    encoding: "utf8",
-    maxBuffer: 16 * 1024 * 1024,
+async function gh(args: readonly string[]): Promise<string> {
+  return command("gh", [...args], { maxTailBytes: GH_MAX_TAIL_BYTES, timeoutMs: 120_000 });
+}
+
+async function ghJson<T>(args: readonly string[]): Promise<T> {
+  return commandJson<T>("gh", [...args], { maxTailBytes: GH_MAX_TAIL_BYTES, timeoutMs: 120_000 });
+}
+
+async function git(args: readonly string[], options: CommandOptions = {}): Promise<string> {
+  return command("git", [...args], {
+    env: nonInteractiveGitEnv(),
+    maxTailBytes: GH_MAX_TAIL_BYTES,
+    timeoutMs: 120_000,
+    ...options,
   });
 }
 
-function ghJson<T>(args: readonly string[]): T {
-  return JSON.parse(gh(args)) as T;
+async function addLabel(issue: number, label: string): Promise<void> {
+  await gh(["issue", "edit", String(issue), "--add-label", label, "--repo", config.GITHUB_REPO]);
 }
 
-function addLabel(issue: number, label: string): void {
-  gh(["issue", "edit", String(issue), "--add-label", label, "--repo", config.GITHUB_REPO]);
-}
-
-function removeLabel(issue: number, label: string): void {
-  gh(["issue", "edit", String(issue), "--remove-label", label, "--repo", config.GITHUB_REPO]);
+async function removeLabel(issue: number, label: string): Promise<void> {
+  await gh(["issue", "edit", String(issue), "--remove-label", label, "--repo", config.GITHUB_REPO]);
 }
 
 interface QueueIssue {
@@ -160,7 +177,7 @@ interface QueueIssue {
   comments: { author: string; body: string }[];
 }
 
-function fetchQueue(): QueueIssue[] {
+async function fetchQueue(): Promise<QueueIssue[]> {
   return ghJson<QueueIssue[]>([
     "issue",
     "list",
@@ -181,8 +198,8 @@ function fetchQueue(): QueueIssue[] {
  * Issues an open factory pull request already owns. The factory does not
  * start a second worker on a ticket whose branch is still under review.
  */
-function claimedIssues(): Set<number> {
-  const prs = ghJson<{ headRefName: string }[]>([
+async function claimedIssues(): Promise<Set<number>> {
+  const prs = await ghJson<{ headRefName: string }[]>([
     "pr",
     "list",
     "--repo",
@@ -206,8 +223,8 @@ function claimedIssues(): Set<number> {
  * check is what makes this safe after a squash merge, which leaves the
  * branch's commits ahead of main even after delivery.
  */
-function branchHasUndeliveredWork(branch: string): boolean {
-  const merged = ghJson<{ headRefName: string }[]>([
+async function branchHasUndeliveredWork(branch: string): Promise<boolean> {
+  const merged = await ghJson<{ headRefName: string }[]>([
     "pr",
     "list",
     "--repo",
@@ -220,9 +237,7 @@ function branchHasUndeliveredWork(branch: string): boolean {
   if (merged.some((pr) => pr.headRefName === branch)) return false;
   let count: string;
   try {
-    count = execFileSync("git", ["-C", root, "rev-list", "--count", `origin/main..${branch}`], {
-      encoding: "utf8",
-    }).trim();
+    count = (await git(["-C", root, "rev-list", "--count", `origin/main..${branch}`])).trim();
   } catch {
     return false;
   }
@@ -300,14 +315,14 @@ function reviewerPromptArgs(branch: string): Record<string, string> {
   return { BRANCH: branch };
 }
 
-function check(): void {
+async function check(): Promise<void> {
   const failures: string[] = [];
   try {
-    gh(["api", `repos/${config.GITHUB_REPO}`, "--jq", ".full_name"]);
+    await gh(["api", `repos/${config.GITHUB_REPO}`, "--jq", ".full_name"]);
   } catch {
     failures.push(`gh cannot read ${config.GITHUB_REPO}`);
   }
-  failures.push(...ghCommandFailures(GH_COMMANDS));
+  failures.push(...(await ghCommandFailures(GH_COMMANDS)));
   const dummyIssue: QueueIssue = {
     number: 0,
     title: "",
@@ -324,14 +339,14 @@ function check(): void {
   );
   const model = agentModel.split("/")[1] ?? agentModel;
   try {
-    const body = execFileSync("curl", [
+    const body = await command("curl", [
       "-fsS",
       "--connect-timeout",
       "10",
       "--max-time",
       "30",
       `${config.VLLM_BASE_URL}/models`,
-    ], { encoding: "utf8" });
+    ], { timeoutMs: 45_000, maxTailBytes: GH_MAX_TAIL_BYTES });
     if (!body.includes(model))
       failures.push(`vLLM at ${config.VLLM_BASE_URL} does not serve ${model}`);
   } catch {
@@ -339,19 +354,19 @@ function check(): void {
   }
   if (config.SANDCASTLE_AGENT === "pi") {
     try {
-      execFileSync("pi", ["--version"], { encoding: "utf8" });
+      await command("pi", ["--version"], { timeoutMs: 30_000 });
     } catch {
       failures.push("pi is not on PATH");
     }
   } else {
     try {
-      execFileSync("opencode", ["--version"], { encoding: "utf8" });
+      await command("opencode", ["--version"], { timeoutMs: 30_000 });
     } catch {
       failures.push("opencode is not on PATH");
     }
   }
   try {
-    execFileSync("java", ["-version"], { encoding: "utf8" });
+    await command("java", ["-version"], { timeoutMs: 30_000 });
   } catch {
     failures.push("java is not on PATH");
   }
@@ -364,7 +379,7 @@ function check(): void {
 }
 
 if (process.argv.includes("--check")) {
-  check();
+  await check();
   process.exit(0);
 }
 
@@ -418,7 +433,7 @@ function ciRepairArgs(): CiRepairArgs | null {
 }
 
 async function performCiRepair(args: CiRepairArgs): Promise<void> {
-  const pr = ghJson<{ headRefName: string; headRefOid: string; title: string }>([
+  const pr = await ghJson<{ headRefName: string; headRefOid: string; title: string }>([
     "pr", "view", String(args.pr), "--repo", config.GITHUB_REPO,
     "--json", "headRefName,headRefOid,title",
   ]);
@@ -431,11 +446,11 @@ async function performCiRepair(args: CiRepairArgs): Promise<void> {
     throw new Error(`#${args.pr}: not a factory branch: ${branch}`);
   const issue = Number(/^sandcastle\/issue-(\d+)$/.exec(branch)?.[1] ?? 0);
 
-  removeWorktreeHolding(branch);
+  await removeWorktreeHolding(branch);
   const sandbox = await sandcastle.createSandbox({
     branch,
     baseBranch: "origin/main",
-    sandbox: passSandbox(),
+    sandbox: await passSandbox(),
     cwd: root,
     hooks: {
       host: {
@@ -451,9 +466,7 @@ async function performCiRepair(args: CiRepairArgs): Promise<void> {
   });
   try {
     const tree = sandbox.worktreePath;
-    const mainHead = execFileSync("git", ["-C", root, "rev-parse", "origin/main"], {
-      encoding: "utf8",
-    }).trim();
+    const mainHead = (await git(["-C", root, "rev-parse", "origin/main"])).trim();
     const discarded = reconcileToPrHead(tree, branch, args.head);
     if (discarded !== null)
       console.log(`#${args.pr}: discarded local head ${discarded.slice(0, 7)} in favour of the PR head`);
@@ -516,23 +529,24 @@ async function performCiRepair(args: CiRepairArgs): Promise<void> {
     if (fault !== null) throw new Error(`#${args.pr}: ${fault}`);
     const [command, ...gateArgs] = config.GATE_COMMAND.split(" ");
     if (command === undefined) throw new Error("GATE_COMMAND is empty");
-    execFileSync(command, gateArgs, {
+    const gate = await runHeavyWork({
+      label: `ci-repair-${issue}`,
+      program: command,
+      args: gateArgs,
       cwd: tree,
-      timeout: config.GATE_MINUTES * 60_000,
-      encoding: "utf8",
-      stdio: "inherit",
+      waitSeconds: config.SANDCASTLE_HEAVY_WORK_WAIT_SECONDS,
+      timeoutSeconds: config.GATE_MINUTES * 60,
+      maxTailBytes: GH_MAX_TAIL_BYTES,
     });
-    execFileSync("git", ["-C", tree, "push", "--force-with-lease", "origin", branch], {
-      encoding: "utf8",
-    });
+    // A busy gate defers this repair; it is not a failed repair attempt.
+    if (gate.code === 75) return;
+    if (gate.code !== 0) throw new Error(`#${args.pr}: repair gate exited ${gate.code}`);
+    await git(["-C", tree, "push", "--force-with-lease", "origin", branch]);
     console.log(`#${args.pr}: repaired head pushed for re-review`);
   } finally {
     const closed = await sandbox.close();
     if (closed.preservedWorktreePath)
-      execFileSync("git", ["-C", root, "worktree", "remove", "--force", closed.preservedWorktreePath], {
-        encoding: "utf8",
-        stdio: "ignore",
-      });
+      await git(["-C", root, "worktree", "remove", "--force", closed.preservedWorktreePath]);
   }
 }
 
@@ -559,7 +573,7 @@ const planSchema = z.object({
 interface TicketResult {
   issue: QueueIssue;
   branch: string;
-  status: "delivered" | "failed";
+  status: "delivered" | "failed" | "deferred";
   detail: string;
 }
 
@@ -567,10 +581,10 @@ async function main(): Promise<void> {
   // Keep open factory pull request branches up to date with main (so they
   // stay mergeable as main moves), and merge the ones whose CI is green.
   // These run on every pass, even when there is no new work.
-  rebaseOpenPrs();
+  await rebaseOpenPrs();
 
-  const queue = fetchQueue();
-  const claimed = claimedIssues();
+  const queue = await fetchQueue();
+  const claimed = await claimedIssues();
   const eligible = queue.filter((issue) => !claimed.has(issue.number));
   console.log(
     `factory: ${queue.length} queued, ${eligible.length} eligible (the rest are already under review)`,
@@ -584,7 +598,7 @@ async function main(): Promise<void> {
   // Plan: pick the issues that can be worked in parallel right now.
   // -------------------------------------------------------------------------
   const plan = await sandcastle.run({
-    sandbox: passSandbox(),
+    sandbox: await passSandbox(),
     name: "planner",
     maxIterations: 1,
     agent: factoryAgent(agentModel, agentKind, agentRunEnv()),
@@ -660,14 +674,14 @@ async function workTicket(
   mkdirSync(resolve(root, ".sandcastle/logs"), { recursive: true });
   writeFileSync(contextPath, JSON.stringify(issue, null, 2));
 
-  addLabel(issue.number, config.INFLIGHT_LABEL);
+  await addLabel(issue.number, config.INFLIGHT_LABEL);
 
   let sandbox: sandcastle.Sandbox;
   try {
     sandbox = await sandcastle.createSandbox({
       branch,
       baseBranch: "origin/main",
-      sandbox: passSandbox(),
+      sandbox: await passSandbox(),
       cwd: root,
       hooks: {
         host: {
@@ -682,7 +696,7 @@ async function workTicket(
       },
     });
   } catch (error) {
-    removeLabel(issue.number, config.INFLIGHT_LABEL);
+    await removeLabel(issue.number, config.INFLIGHT_LABEL);
     throw error;
   }
 
@@ -729,23 +743,28 @@ async function workTicket(
   // implementer made no new commits but the branch carries work that has
   // never been delivered, that work is still deliverable: gate it and
   // push it.
-  const hasWork = failure === null && (commits.length > 0 || branchHasUndeliveredWork(branch));
+  const hasWork = failure === null && (commits.length > 0 || (await branchHasUndeliveredWork(branch)));
 
   // The quality gate is run by the orchestrator, not the agent: an agent
-  // never gets to say "tests pass".
+  // never gets to say "tests pass". Exit 75 from the heavy-work gate is a
+  // deferral, not a failed attempt and not a strike.
+  let deferred = false;
   if (hasWork) {
-    try {
-      const [command, ...args] = config.GATE_COMMAND.split(" ");
-      if (command === undefined) throw new Error("GATE_COMMAND is empty");
-      const gate = execFileSync(command, args, {
-        cwd: sandbox.worktreePath,
-        timeout: config.GATE_MINUTES * 60_000,
-        maxBuffer: 16 * 1024 * 1024,
-        encoding: "utf8",
-      });
-      void gate;
-    } catch (error) {
-      failure = `gate ${config.GATE_COMMAND} failed: ${tail(String(error), 2000)}`;
+    const [command, ...args] = config.GATE_COMMAND.split(" ");
+    if (command === undefined) throw new Error("GATE_COMMAND is empty");
+    const gate = await runHeavyWork({
+      label: `delivery-gate-issue-${issue.number}`,
+      program: command,
+      args,
+      cwd: sandbox.worktreePath,
+      waitSeconds: config.SANDCASTLE_HEAVY_WORK_WAIT_SECONDS,
+      timeoutSeconds: config.GATE_MINUTES * 60,
+      maxTailBytes: GH_MAX_TAIL_BYTES,
+    });
+    if (gate.code === 75) {
+      deferred = true;
+    } else if (gate.code !== 0) {
+      failure = `gate ${config.GATE_COMMAND} failed: ${tail(resultOutput(gate), 2000)}`;
     }
   }
 
@@ -756,17 +775,19 @@ async function workTicket(
   // on the shared branch ref, and the worktree keeps the branch checked out,
   // which blocks any later worktree for the same branch.
   if (closed.preservedWorktreePath) {
-    execFileSync("git", ["-C", root, "worktree", "remove", "--force", closed.preservedWorktreePath], {
-      encoding: "utf8",
-      stdio: "ignore",
-    });
+    await git(["-C", root, "worktree", "remove", "--force", closed.preservedWorktreePath]);
+  }
+
+  if (deferred) {
+    await removeLabel(issue.number, config.INFLIGHT_LABEL);
+    return { issue, branch, status: "deferred", detail: "heavy-work gate was busy; retrying next pass" };
   }
 
   if (failure === null && hasWork) {
     try {
-      deliver(issue, branch);
+      await deliver(issue, branch);
       clearStrike(issue.number);
-      removeLabel(issue.number, config.INFLIGHT_LABEL);
+      await removeLabel(issue.number, config.INFLIGHT_LABEL);
       return { issue, branch, status: "delivered", detail: "pull request opened" };
     } catch (error) {
       failure = `delivery failed: ${String(error)}`;
@@ -794,9 +815,9 @@ async function workTicket(
     ledger[String(issue.number)] = strike;
     writeStrikes(ledger);
     if (strike.count >= config.SANDCASTLE_TICKET_STRIKES) {
-      addLabel(issue.number, config.HANDOFF_LABEL);
-      removeLabel(issue.number, config.QUEUE_LABEL);
-      gh([
+      await addLabel(issue.number, config.HANDOFF_LABEL);
+      await removeLabel(issue.number, config.QUEUE_LABEL);
+      await gh([
         "issue",
         "comment",
         "--repo",
@@ -813,7 +834,7 @@ async function workTicket(
       ]);
       clearStrike(issue.number);
     }
-    removeLabel(issue.number, config.INFLIGHT_LABEL);
+    await removeLabel(issue.number, config.INFLIGHT_LABEL);
   }
   return { issue, branch, status: "failed", detail: failure ?? "no commits" };
 }
@@ -823,9 +844,9 @@ async function workTicket(
  * runtime checkout (worktrees share the main repo's refs), so the push comes
  * from there, after the worktree is gone.
  */
-function deliver(issue: QueueIssue, branch: string): void {
-  execFileSync("git", ["-C", root, "push", "origin", branch], { encoding: "utf8" });
-  const url = gh([
+async function deliver(issue: QueueIssue, branch: string): Promise<void> {
+  await git(["-C", root, "push", "origin", branch]);
+  const url = await gh([
     "pr",
     "create",
     "--repo",
@@ -849,11 +870,11 @@ function deliver(issue: QueueIssue, branch: string): void {
   // green and there is no conflict, so no pass needs to merge it.
   const prNumber = url.trim().split("/").pop() ?? "";
   try {
-    gh(["pr", "merge", prNumber, "--auto", "--squash", "--repo", config.GITHUB_REPO]);
+    await gh(["pr", "merge", prNumber, "--auto", "--squash", "--repo", config.GITHUB_REPO]);
   } catch (error) {
     console.error(`factory: #${issue.number} auto-merge failed: ${String(error)}`);
   }
-  gh([
+  await gh([
     "issue",
     "comment",
     "--repo",
@@ -877,13 +898,13 @@ function deliver(issue: QueueIssue, branch: string): void {
 // ---------------------------------------------------------------------------
 
 /** Open factory pull requests (the sandcastle/issue-* branches). */
-function openFactoryPrs(): {
+async function openFactoryPrs(): Promise<{
   number: number;
   headRefName: string;
   isDraft: boolean;
   mergeable: string;
-}[] {
-  const prs = ghJson<{ number: number; headRefName: string; isDraft: boolean; mergeable: string }[]>([
+}[]> {
+  const prs = await ghJson<{ number: number; headRefName: string; isDraft: boolean; mergeable: string }[]>([
     "pr",
     "list",
     "--repo",
@@ -900,19 +921,14 @@ function openFactoryPrs(): {
  * Remove a worktree that has `branch` checked out (a preserved ticket
  * worktree), so the branch can be checked out again.
  */
-function removeWorktreeHolding(branch: string): void {
-  const lines = execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], {
-    encoding: "utf8",
-  }).split("\n");
+async function removeWorktreeHolding(branch: string): Promise<void> {
+  const lines = (await git(["-C", root, "worktree", "list", "--porcelain"])).split("\n");
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     const previous = lines[i - 1];
     if (line === undefined || previous === undefined) continue;
     if (line.trim() === `branch ${branch}`) {
-      execFileSync("git", ["-C", root, "worktree", "remove", "--force", previous.slice("worktree ".length)], {
-        encoding: "utf8",
-        stdio: "ignore",
-      });
+      await git(["-C", root, "worktree", "remove", "--force", previous.slice("worktree ".length)]);
       break;
     }
   }
@@ -923,42 +939,42 @@ function removeWorktreeHolding(branch: string): void {
  * worktree, and force-push the result. Returns false (and leaves the branch
  * as-is) when the rebase conflicts, so a human can resolve it.
  */
-function rebaseBranch(branch: string): boolean {
+async function rebaseBranch(branch: string): Promise<boolean> {
   // The branch name contains a slash (sandcastle/issue-N); the worktree
   // path must stay one directory level deep.
   const worktree = `${root}/.sandcastle/worktrees/rebase-${branch.replace("/", "-")}`;
   // The runtime checkout has no git identity; take it from main's HEAD,
   // which the factory commits under.
-  const identity = execFileSync("git", ["-C", root, "log", "-1", "--format=%an|%ae", "origin/main"], {
-    encoding: "utf8",
-  }).trim();
+  const identity = (await git(["-C", root, "log", "-1", "--format=%an|%ae", "origin/main"])).trim();
   const [name, email] = identity.split("|");
   const gitIn = (args: readonly string[]) =>
-    execFileSync("git", ["-C", worktree, "-c", `user.name=${name}`, "-c", `user.email=${email}`, ...args], {
-      encoding: "utf8",
-    });
+    git(["-C", worktree, "-c", `user.name=${name}`, "-c", `user.email=${email}`, ...args]);
   try {
-    removeWorktreeHolding(branch);
-    execFileSync("git", ["-C", root, "worktree", "add", worktree, branch], { encoding: "utf8" });
-    gitIn(["rebase", "origin/main"]);
-    gitIn(["push", "--force-with-lease", "origin", branch]);
+    await removeWorktreeHolding(branch);
+    await git(["-C", root, "worktree", "add", worktree, branch]);
+    const rebase = await runHeavyWork({
+      label: `git-rebase-${branch}`,
+      program: "git",
+      args: ["-C", worktree, "-c", `user.name=${name}`, "-c", `user.email=${email}`, "rebase", "origin/main"],
+      cwd: root,
+      env: nonInteractiveGitEnv(),
+      waitSeconds: config.SANDCASTLE_HEAVY_WORK_WAIT_SECONDS,
+      timeoutSeconds: config.SANDCASTLE_GIT_TIMEOUT_SECONDS,
+      maxTailBytes: GH_MAX_TAIL_BYTES,
+    });
+    if (rebase.code !== 0) return false;
+    await gitIn(["push", "--force-with-lease", "origin", branch]);
     return true;
   } catch {
     try {
-      execFileSync("git", ["-C", worktree, "rebase", "--abort"], {
-        encoding: "utf8",
-        stdio: "ignore",
-      });
+      await git(["-C", worktree, "rebase", "--abort"]);
     } catch {
       // no rebase in progress (the worktree may not exist)
     }
     return false;
   } finally {
     try {
-      execFileSync("git", ["-C", root, "worktree", "remove", "--force", worktree], {
-        encoding: "utf8",
-        stdio: "ignore",
-      });
+      await git(["-C", root, "worktree", "remove", "--force", worktree]);
     } catch {
       // the worktree may not exist if the add failed
     }
@@ -984,14 +1000,12 @@ function writeAlertKeys(keys: Set<string>): void {
 }
 
 /** Rebase every open factory branch onto the latest main and arm green heads. */
-function rebaseOpenPrs(): void {
-  execFileSync("git", ["-C", root, "fetch", "origin"], { encoding: "utf8" });
-  const head = execFileSync("git", ["-C", root, "rev-parse", "origin/main"], {
-    encoding: "utf8",
-  }).trim();
-  for (const pr of openFactoryPrs()) {
+async function rebaseOpenPrs(): Promise<void> {
+  await git(["-C", root, "fetch", "origin"]);
+  const head = (await git(["-C", root, "rev-parse", "origin/main"])).trim();
+  for (const pr of await openFactoryPrs()) {
     try {
-      if (rebaseBranch(pr.headRefName)) {
+      if (await rebaseBranch(pr.headRefName)) {
         console.log(`  #${pr.number}: rebased onto main`);
       } else {
         // A conflict that survives the deterministic rebase is reported once
@@ -1028,6 +1042,10 @@ function clearStrike(issueNumber: number): void {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function resultOutput(result: CommandResult): string {
+  return [result.stdout, result.stderr].join("\n").trim();
 }
 
 function tail(value: string, length: number): string {

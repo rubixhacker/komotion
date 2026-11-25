@@ -47,8 +47,11 @@ and `sample-app`.
 Implement the smallest correct change that meets every acceptance criterion in
 the issue. Never mark a criterion partial or out of scope on your own judgment.
 
-Run every Gradle task through the wrapper: the changed test class first, then
-its module, and `./gradlew desktopTest` once at the end.
+Run every Gradle task through `.sandcastle/agent/bin/gradle`: the changed test
+class first, then its module, and `.sandcastle/agent/bin/gradle desktopTest`
+once at the end. Never call `gradlew` directly; it is denied. If the wrapper
+exits 75, the machine's heavy-work lock is busy. Stop and report the work as
+deferred; do not retry in a loop or bypass the wrapper.
 
 # COMMIT
 

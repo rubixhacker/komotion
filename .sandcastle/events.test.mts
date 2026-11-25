@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -10,6 +10,12 @@ import {
   pendingEvents,
   relevantEvent,
 } from "./events.mjs";
+import {
+  expireMarkers,
+  readSnapshot,
+  requeueSnapshot,
+  writeSnapshot,
+} from "./events-cli.mjs";
 import { REPO } from "./queue.mjs";
 
 test("acknowledging a sweep preserves events that arrived during its repair", () => {
@@ -192,6 +198,37 @@ test("a running pass takes delivery events and leaves queue events for the next 
     assert.deepEqual(pendingEvents(directory), [queued]);
     // A second consumer acknowledging the same snapshot finds the file gone.
     acknowledgeEvents(directory, [delivered]);
+  } finally {
+    rmSync(directory, { recursive: true });
+  }
+});
+
+test("expiry removes markers older than the configured lifetime", () => {
+  const directory = mkdtempSync(join(tmpdir(), "sandcastle-events-"));
+  try {
+    const fresh = enqueueEvent(directory, "workflow_dispatch");
+    const stale = enqueueEvent(directory, "push");
+    const old = new Date(Date.now() - 10 * 60_000);
+    utimesSync(join(directory, stale), old, old);
+    assert.equal(expireMarkers(directory, "", { expirySeconds: 60 }), 1);
+    assert.deepEqual(pendingEvents(directory), [fresh]);
+  } finally {
+    rmSync(directory, { recursive: true });
+  }
+});
+
+test("an exact snapshot can be requeued after a busy lane", () => {
+  const directory = mkdtempSync(join(tmpdir(), "sandcastle-events-"));
+  try {
+    const first = enqueueEvent(directory, "issues", "queue-");
+    const file = join(directory, "snapshot.json");
+    writeSnapshot(file, { prefix: "queue-", names: [first] });
+    enqueueEvent(directory, "push", "queue-");
+    acknowledgeEvents(directory, readSnapshot(file).names);
+    assert.equal(pendingEvents(directory, "queue-").length, 1);
+    const marker = requeueSnapshot(directory, readSnapshot(file));
+    assert.ok(marker !== null);
+    assert.equal(pendingEvents(directory, "queue-").length, 2);
   } finally {
     rmSync(directory, { recursive: true });
   }

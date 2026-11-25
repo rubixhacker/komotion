@@ -16,7 +16,9 @@ set -euo pipefail
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 log="$root/.sandcastle/logs/factory-alerts.log"
 state_dir="$root/.sandcastle/logs/alert-state"
+logs_tool="$root/.sandcastle/logs.mts"
 repeat_minutes=${SANDCASTLE_ALERT_REPEAT_MINUTES:-360}
+log_max_bytes=${SANDCASTLE_ALERT_LOG_MAX_BYTES:-262144}
 
 unit=""
 if [ "${1:-}" = "--unit" ]; then
@@ -83,6 +85,26 @@ message=$(cd "$root/.sandcastle" && npm run --silent status 2>&1 || true)
   printf '%s\n' "$message"
 } >>"$log"
 printf '0 %s %s\n' "$first" "$now" >"$state"
+
+# The alert log is diagnostic state: keep the newest bytes so a host that
+# faults for weeks cannot fill its disk.
+if [[ "$log_max_bytes" =~ ^[0-9]+$ ]] && [ -f "$logs_tool" ] 2>/dev/null; then
+  node --experimental-strip-types "$logs_tool" cap-file --path "$log" --max-bytes "$log_max_bytes" >/dev/null 2>&1 || true
+elif [ -f "$log" ]; then
+  tail -c "$log_max_bytes" "$log" >"$log.tmp" && mv "$log.tmp" "$log"
+fi
+
+if command -v osascript >/dev/null 2>&1; then
+  # Best effort: a notification must never block the lane or change its status.
+  osascript -e 'on run argv' \
+    -e 'display alert "Sandcastle needs a human" message (item 1 of argv)' \
+    -e 'end run' "$title: $text" >/dev/null 2>&1 &
+  alert_pid=$!
+  ( sleep 5; kill -9 "$alert_pid" 2>/dev/null || true ) >/dev/null 2>&1 &
+  watchdog_pid=$!
+  wait "$alert_pid" 2>/dev/null || true
+  kill "$watchdog_pid" 2>/dev/null || true
+fi
 
 if command -v notify-send >/dev/null 2>&1 && [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
   # The alert log and stdout already carry the message; a desktop session

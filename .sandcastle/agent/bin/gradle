@@ -1,3 +1,15 @@
 #!/bin/sh
 # See ../README.md. Runs from any directory inside the worktree.
-exec node "$(dirname "$0")/../cli/gradle.mts" "$@"
+set -eu
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+gate=${MACOS_HEAVY_WORK_GATE:-}
+
+if [ "${MAC_HEAVY_WORK_HELD:-0}" = "1" ] || [ -z "$gate" ] || [ ! -x "$gate" ]; then
+  exec node "$here/../cli/gradle.mts" "$@"
+fi
+
+wait=${SANDCASTLE_HEAVY_WORK_WAIT_SECONDS:-300}
+timeout=${SANDCASTLE_HEAVY_WORK_TIMEOUT_SECONDS:-3600}
+exec "$gate" --label agent-gradle --wait "$wait" --timeout "$timeout" -- \
+  node "$here/../cli/gradle.mts" "$@"

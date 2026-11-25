@@ -99,6 +99,30 @@ The other knobs are environment variables with defaults in each entry point
 `SANDCASTLE_TICKET_STRIKES`, `SANDCASTLE_CI_SWEEP_MINUTES`, `GATE_COMMAND`,
 `GATE_MINUTES`, `TRIAGE_BATCH`).
 
+- `SANDCASTLE_EVENT_EXPIRY_SECONDS` — marker lifetime, default `86400` (24
+  hours). Set `0` to disable expiry. Publication, enqueue and lane startup
+  prune expired markers, so an event that arrived while the host was offline
+  cannot wake a lane with stale state.
+- `MACOS_HEAVY_WORK_GATE` — optional executable that serialises Gradle/Xcode
+  and git rebase work. It is invoked as
+  `<gate> --label <label> --wait <seconds> --timeout <seconds> -- <program> <args...>`.
+  Without it the factory and agents run directly and stay portable.
+- `MAC_HEAVY_WORK_HELD` — set to `1` when a process already holds the heavy
+  lock, so the adapter and the agents' Gradle wrapper do not deadlock on it.
+- `MACOS_HEAVY_WORK_STATE_DIR` — writable gate state directory, default
+  `$HOME/.cache/komotion-heavy-work`. It is mounted read/write in the sandbox
+  and installed into the launchd agents' environment.
+- `SANDCASTLE_HEAVY_WORK_WAIT_SECONDS` — lock wait, default `300`. Exit `75`
+  means "retry on the next pass"; it is a deferral and never a ticket strike.
+- `SANDCASTLE_GIT_TIMEOUT_SECONDS` — git rebase timeout, default `300`.
+- `SANDCASTLE_LOG_MAX_BYTES` — cap per launchd log, default `8388608` (8 MiB).
+  The lane wrapper caps logs in place at startup and exit, preserving the
+  inode launchd holds open. `_LOG_ARCHIVES` (default `5`) bounds old archives.
+- `SANDCASTLE_ALERT_REPEAT_MINUTES` — alert dedupe window, default `360`.
+  `SANDCASTLE_ALERT_LOG_MAX_BYTES` bounds the alert log (default `262144`);
+  state files older than seven days are pruned. macOS notifications are best
+  effort and never change a lane's exit status.
+
 The gate compiles every target in every module, so the host needs Xcode (iOS)
 and the Android SDK (Android — the command-line tools alone are not enough).
 Install the platform and build tools AGP defaults to:
@@ -120,7 +144,10 @@ npm --prefix .sandcastle run lanes:check
 
 State lives in `.sandcastle/logs/` (gitignored):
 
-- `launchd-<lane>.log` / `.err.log` — the launchd agents' output.
+- `launchd-<lane>.log` / `.err.log` — the launchd agents' output, capped in
+  place at each lane start and exit.
+- `<lane>.pending.<pid>.json` — short-lived exact event snapshots; a marker
+  arriving after the snapshot is left for the next pass.
 - `<lane>-events/` — event markers; `queue-*` for new work, `delivery-*` for
   merged pull requests and completed CI runs.
 - `ci-alerts.json`, `unarmed-factory-prs.json`, `factory-rearm.json`,

@@ -14,7 +14,9 @@ relaxing a threshold hides a branch defect rather than fixing it.
 ## Layout
 
 - `bin/` — the commands agents run: `gradle`, `find-symbol`, `lib-source`. Each
-  is a one-line wrapper around a script in `cli/`.
+  is a one-line wrapper around a script in `cli/`. `gradle` goes through
+  `MACOS_HEAVY_WORK_GATE` when configured; exit `75` is a deferral, not a
+  failed ticket, and the wrapper must never be bypassed with raw `gradlew`.
 - `cli/` — the scripts, in TypeScript that the sandbox's Node runs directly.
   Their tests are `../agent-tools.test.mts`.
 - `skills/factory-tools/SKILL.md` — how to build and search in the sandbox.

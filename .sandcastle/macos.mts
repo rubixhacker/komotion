@@ -13,12 +13,27 @@
 // - `xcode-select -p` on this Mac points at the Command Line Tools, so the
 //   host's Xcode tools need DEVELOPER_DIR pointed at the Xcode app.
 
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { MountConfig } from "@ai-hero/sandcastle";
 import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
+import {
+  HEAVY_WORK_GATE_ENV,
+  HEAVY_WORK_HELD_ENV,
+  HEAVY_WORK_TIMEOUT_ENV,
+  HEAVY_WORK_WAIT_ENV,
+} from "./heavy-work.mts";
+import { command } from "./process.mts";
+
+export const HEAVY_WORK_STATE_ENV = "MACOS_HEAVY_WORK_STATE_DIR";
+const EXPOSED_HEAVY_VARS = [
+  HEAVY_WORK_HELD_ENV,
+  HEAVY_WORK_GATE_ENV,
+  HEAVY_WORK_STATE_ENV,
+  HEAVY_WORK_WAIT_ENV,
+  HEAVY_WORK_TIMEOUT_ENV,
+] as const;
 
 /** The real path behind a path xcrun and Xcode use for their caches. */
 function macTempRoots(): string[] {
@@ -27,41 +42,59 @@ function macTempRoots(): string[] {
   return [temp, ...(existsSync(cache) ? [cache] : [])];
 }
 
+let xcodeAppPromise: Promise<string | null> | undefined;
+
 /** The Xcode app bundle, or null without one. */
-function xcodeApp(): string | null {
-  const standard = "/Applications/Xcode.app";
-  if (existsSync(join(standard, "Contents", "Developer"))) return standard;
-  try {
-    const developer = execFileSync("xcode-select", ["-p"], { encoding: "utf8" }).trim();
-    return existsSync(developer) ? developer : null;
-  } catch {
-    return null;
-  }
+function xcodeApp(): Promise<string | null> {
+  xcodeAppPromise ??= (async () => {
+    const standard = "/Applications/Xcode.app";
+    if (existsSync(join(standard, "Contents", "Developer"))) return standard;
+    try {
+      const developer = (await command("xcode-select", ["-p"], {
+        timeoutMs: 10_000,
+        maxTailBytes: 4 * 1024,
+      })).trim();
+      return existsSync(developer) ? developer : null;
+    } catch {
+      return null;
+    }
+  })();
+  return xcodeAppPromise;
 }
 
 /** The `DEVELOPER_DIR` value the host's Xcode tools need, or null without Xcode. */
-function xcodeDeveloperDir(): string | null {
-  const app = xcodeApp();
+async function xcodeDeveloperDir(): Promise<string | null> {
+  const app = await xcodeApp();
   if (app === null) return null;
   const developer = join(app, "Contents", "Developer");
   return existsSync(developer) ? developer : null;
 }
 
+let javaHomePromise: Promise<string | null> | undefined;
+
 /** Java 21, the JDK the Gradle wrapper uses. */
-function javaHome(): string | null {
-  try {
-    // The lookup prints "Unable to locate a Java Runtime" on stderr when no
-    // JDK is registered with the system; capture it so it does not leak into
-    // the lane output.
-    return execFileSync("/usr/libexec/java_home", ["-v", "21"], {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-  } catch {
-    // No JDK 21 registered with the system: Homebrew's openjdk@21 is the JDK 21.
-  }
-  const homebrew = "/opt/homebrew/opt/openjdk@21";
-  return existsSync(join(homebrew, "bin", "java")) ? homebrew : null;
+function javaHome(): Promise<string | null> {
+  javaHomePromise ??= (async () => {
+    try {
+      // The lookup prints "Unable to locate a Java Runtime" on stderr when no
+      // JDK is registered with the system; capture it so it does not leak into
+      // the lane output.
+      return (await command("/usr/libexec/java_home", ["-v", "21"], {
+        timeoutMs: 10_000,
+        maxTailBytes: 4 * 1024,
+      })).trim();
+    } catch {
+      // No JDK 21 registered with the system: Homebrew's openjdk@21 is the JDK 21.
+    }
+    const homebrew = "/opt/homebrew/opt/openjdk@21";
+    return existsSync(join(homebrew, "bin", "java")) ? homebrew : null;
+  })();
+  return javaHomePromise;
+}
+
+function heavyStateDir(home: string): string {
+  const configured = process.env[HEAVY_WORK_STATE_ENV];
+  return configured === undefined || configured === "" ? join(home, ".cache", "komotion-heavy-work") : resolve(configured);
 }
 
 /** Paths the sandbox must see at their own host location to use the native toolchain. */
@@ -80,17 +113,37 @@ export function macMounts(home = homedir()): MountConfig[] {
     mkdirSync(path, { recursive: true });
     add(path, false);
   }
+
+  // The heavy-work gate lives outside the worktree, and its lock state must
+  // be writable from inside the sandbox.
+  const gate = process.env[HEAVY_WORK_GATE_ENV];
+  if (gate !== undefined && gate !== "") add(resolve(gate), true);
+  const state = heavyStateDir(home);
+  try {
+    mkdirSync(state, { recursive: true, mode: 0o700 });
+    add(state, false);
+  } catch {
+    // A misconfigured state path is reported by the gate; it must not stop
+    // unrelated sandbox work.
+  }
   return mounts;
 }
 
 /**
  * Sandbox env for the native host: the host's PATH with Java 21 first so
  * Gradle does not pick up an older JDK, the shared Gradle and Kotlin/Native
- * caches at their host paths, and DEVELOPER_DIR at the Xcode app.
+ * caches at their host paths, and DEVELOPER_DIR at the Xcode app. Only the
+ * heavy-work settings are copied from the host: no credentials cross into
+ * the sandbox.
  */
-export function macEnv(env: Readonly<Record<string, string>>): Record<string, string> {
-  const rewritten: Record<string, string> = { ...env };
-  const java = javaHome();
+export async function macEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<Record<string, string>> {
+  const rewritten: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) rewritten[key] = value;
+  }
+  const java = await javaHome();
   rewritten.PATH = [
     ...(java === null ? [] : [`${java}/bin`]),
     "/opt/homebrew/bin",
@@ -102,8 +155,14 @@ export function macEnv(env: Readonly<Record<string, string>>): Record<string, st
   ].join(":");
   rewritten.GRADLE_USER_HOME = rewritten.GRADLE_USER_HOME ?? join(homedir(), ".gradle");
   rewritten.KONAN_DATA_DIR = rewritten.KONAN_DATA_DIR ?? join(homedir(), ".konan");
-  const developer = xcodeDeveloperDir();
+  const developer = await xcodeDeveloperDir();
   if (developer !== null) rewritten.DEVELOPER_DIR = developer;
+
+  const gate = rewritten[HEAVY_WORK_GATE_ENV];
+  if (gate !== undefined && gate !== "" && existsSync(gate)) {
+    rewritten[HEAVY_WORK_GATE_ENV] = realpathSync(gate);
+  }
+  rewritten[HEAVY_WORK_STATE_ENV] = rewritten[HEAVY_WORK_STATE_ENV] ?? heavyStateDir(homedir());
   return rewritten;
 }
 
@@ -111,6 +170,14 @@ export function macEnv(env: Readonly<Record<string, string>>): Record<string, st
  * The factory's provider factory: sandcastle's Seatbelt provider with
  * identity mounts and the host toolchain.
  */
-export function factorySandbox(extraMounts: MountConfig[] = []) {
-  return seatbelt({ env: macEnv({}), mounts: [...macMounts(), ...extraMounts] });
+export async function factorySandbox(extraMounts: MountConfig[] = []) {
+  const exposed: Record<string, string> = {};
+  for (const key of EXPOSED_HEAVY_VARS) {
+    const value = process.env[key];
+    if (value !== undefined && value !== "") exposed[key] = value;
+  }
+  return seatbelt({
+    env: await macEnv(exposed),
+    mounts: [...macMounts(), ...extraMounts],
+  });
 }

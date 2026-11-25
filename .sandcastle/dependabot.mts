@@ -9,11 +9,12 @@
 //   npx tsx .sandcastle/dependabot.mts          # run one pass
 //   npx tsx .sandcastle/dependabot.mts --check  # verify the environment, then exit
 
-import { execFileSync } from "node:child_process";
 import { z } from "zod";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { enterFactoryLock, factoryLockPath } from "./lock.mjs";
+import { GH_MAX_TAIL_BYTES } from "./check.mts";
+import { command, commandJson } from "./process.mts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 try {
@@ -29,15 +30,16 @@ const config = z
   })
   .parse(process.env);
 
-function gh(args: readonly string[]): string {
-  return execFileSync("gh", args, {
-    encoding: "utf8",
-    maxBuffer: 16 * 1024 * 1024,
-  });
+function ghOptions() {
+  return { maxTailBytes: GH_MAX_TAIL_BYTES, timeoutMs: 120_000 };
 }
 
-function ghJson<T>(args: readonly string[]): T {
-  return JSON.parse(gh(args)) as T;
+async function gh(args: readonly string[]): Promise<string> {
+  return command("gh", [...args], ghOptions());
+}
+
+async function ghJson<T>(args: readonly string[]): Promise<T> {
+  return commandJson<T>("gh", [...args], ghOptions());
 }
 
 interface DependabotPr {
@@ -49,9 +51,9 @@ interface DependabotPr {
 
 const RED_MARKER = "Sandcastle: CI is red on this head";
 
-function check(): void {
+async function check(): Promise<void> {
   try {
-    gh(["api", `repos/${config.GITHUB_REPO}`, "--jq", ".full_name"]);
+    await gh(["api", `repos/${config.GITHUB_REPO}`, "--jq", ".full_name"]);
   } catch {
     console.error(`dependabot check: gh cannot read ${config.GITHUB_REPO}`);
     process.exit(1);
@@ -60,7 +62,7 @@ function check(): void {
 }
 
 if (process.argv.includes("--check")) {
-  check();
+  await check();
   process.exit(0);
 }
 
@@ -69,8 +71,8 @@ enterFactoryLock(factoryLockPath("dependabot.lock"), fileURLToPath(import.meta.u
 type CheckState = "green" | "red" | "pending";
 
 /** The CI verdict on a pull request's head: green, red or pending. */
-function checkState(prNumber: number): CheckState {
-  const checks = ghJson<{ state: string }[]>([
+async function checkState(prNumber: number): Promise<CheckState> {
+  const checks = await ghJson<{ state: string }[]>([
     "pr",
     "checks",
     String(prNumber),
@@ -85,7 +87,7 @@ function checkState(prNumber: number): CheckState {
 }
 
 async function main(): Promise<void> {
-  const prs = ghJson<DependabotPr[]>([
+  const prs = await ghJson<DependabotPr[]>([
     "pr",
     "list",
     "--repo",
@@ -103,14 +105,14 @@ async function main(): Promise<void> {
       console.log(`  #${pr.number}: draft; waiting`);
       continue;
     }
-    const state = checkState(pr.number);
+    const state = await checkState(pr.number);
     if (state === "green") {
-      gh(["pr", "merge", String(pr.number), "--squash", "--repo", config.GITHUB_REPO]);
+      await gh(["pr", "merge", String(pr.number), "--squash", "--repo", config.GITHUB_REPO]);
       console.log(`  #${pr.number}: merged (CI green)`);
     } else if (state === "red") {
       // Comment once: a red head is left for the next pass, and dependabot
       // itself re-runs CI on every base update.
-      const comments = ghJson<{ body: string }[]>([
+      const comments = await ghJson<{ body: string }[]>([
         "issue",
         "comments",
         "--repo",
@@ -120,7 +122,7 @@ async function main(): Promise<void> {
         "body",
       ]);
       if (!comments.some((comment) => comment.body.includes(RED_MARKER))) {
-        gh([
+        await gh([
           "issue",
           "comment",
           "--repo",

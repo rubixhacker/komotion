@@ -12,13 +12,13 @@
 
 import * as sandcastle from "@ai-hero/sandcastle";
 import { z } from "zod";
-import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { enterFactoryLock, factoryLockPath } from "./lock.mjs";
-import { ghCommandFailures, promptArgFailures } from "./check.mts";
+import { ghCommandFailures, GH_MAX_TAIL_BYTES, promptArgFailures } from "./check.mts";
 import { factorySandbox } from "./macos.mts";
+import { command, commandJson } from "./process.mts";
 import {
   createPiAgentDir,
   factoryAgent,
@@ -47,23 +47,20 @@ const config = z
   })
   .parse(process.env);
 
-function gh(args: readonly string[]): string {
-  return execFileSync("gh", args, {
-    encoding: "utf8",
-    maxBuffer: 16 * 1024 * 1024,
-  });
+async function gh(args: readonly string[]): Promise<string> {
+  return command("gh", [...args], { maxTailBytes: GH_MAX_TAIL_BYTES, timeoutMs: 120_000 });
 }
 
-function ghJson<T>(args: readonly string[]): T {
-  return JSON.parse(gh(args)) as T;
+async function ghJson<T>(args: readonly string[]): Promise<T> {
+  return commandJson<T>("gh", [...args], { maxTailBytes: GH_MAX_TAIL_BYTES, timeoutMs: 120_000 });
 }
 
-function addLabel(issue: number, label: string): void {
-  gh(["issue", "edit", String(issue), "--add-label", label, "--repo", config.GITHUB_REPO]);
+async function addLabel(issue: number, label: string): Promise<void> {
+  await gh(["issue", "edit", String(issue), "--add-label", label, "--repo", config.GITHUB_REPO]);
 }
 
-function removeLabel(issue: number, label: string): void {
-  gh(["issue", "edit", String(issue), "--remove-label", label, "--repo", config.GITHUB_REPO]);
+async function removeLabel(issue: number, label: string): Promise<void> {
+  await gh(["issue", "edit", String(issue), "--remove-label", label, "--repo", config.GITHUB_REPO]);
 }
 
 interface OpenIssue {
@@ -74,7 +71,7 @@ interface OpenIssue {
   comments: { author: string; body: string }[];
 }
 
-function fetchOpenIssues(): OpenIssue[] {
+async function fetchOpenIssues(): Promise<OpenIssue[]> {
   return ghJson<OpenIssue[]>([
     "issue",
     "list",
@@ -119,32 +116,32 @@ function triagePromptArgs(issues: OpenIssue[]): Record<string, string> {
   return { ISSUES: JSON.stringify(issues, null, 2) };
 }
 
-function check(): void {
+async function check(): Promise<void> {
   const failures: string[] = [];
   try {
-    gh(["api", `repos/${config.GITHUB_REPO}`, "--jq", ".full_name"]);
+    await gh(["api", `repos/${config.GITHUB_REPO}`, "--jq", ".full_name"]);
   } catch {
     failures.push(`gh cannot read ${config.GITHUB_REPO}`);
   }
-  failures.push(...ghCommandFailures(GH_COMMANDS));
+  failures.push(...(await ghCommandFailures(GH_COMMANDS)));
   failures.push(...promptArgFailures([["triage", triagePromptArgs([])]]));
   const model = config.SANDCASTLE_MODEL.split("/")[1] ?? config.SANDCASTLE_MODEL;
   try {
-    const body = execFileSync("curl", [
+    const body = await command("curl", [
       "-fsS",
       "--connect-timeout",
       "10",
       "--max-time",
       "30",
       `${config.VLLM_BASE_URL}/models`,
-    ], { encoding: "utf8" });
+    ], { timeoutMs: 45_000, maxTailBytes: GH_MAX_TAIL_BYTES });
     if (!body.includes(model))
       failures.push(`vLLM at ${config.VLLM_BASE_URL} does not serve ${model}`);
   } catch {
     failures.push(`vLLM at ${config.VLLM_BASE_URL} is not reachable`);
   }
   try {
-    execFileSync("opencode", ["--version"], { encoding: "utf8" });
+    await command("opencode", ["--version"], { timeoutMs: 30_000 });
   } catch {
     failures.push("opencode is not on PATH");
   }
@@ -156,7 +153,7 @@ function check(): void {
 }
 
 if (process.argv.includes("--check")) {
-  check();
+  await check();
   process.exit(0);
 }
 
@@ -168,7 +165,7 @@ const triageEvents = resolve(root, ".sandcastle/logs/triage-events");
 acknowledgeEvents(triageEvents, pendingEvents(triageEvents));
 
 async function main(): Promise<void> {
-  const issues = fetchOpenIssues();
+  const issues = await fetchOpenIssues();
   console.log(`triage: ${issues.length} open issue(s)`);
   if (issues.length === 0) {
     console.log("triage: nothing to do");
@@ -185,7 +182,7 @@ async function main(): Promise<void> {
         })
       : null;
   const result = await sandcastle.run({
-    sandbox: factorySandbox(
+    sandbox: await factorySandbox(
       piAgentDir === null
         ? []
         : [{ hostPath: piAgentDir, sandboxPath: piAgentDir, readonly: false }],
@@ -206,10 +203,10 @@ async function main(): Promise<void> {
   const decisions = result.output.decisions;
   console.log(`triage: ${decisions.length} decision(s)`);
   for (const decision of decisions) {
-    for (const label of decision.add) addLabel(decision.issue, label);
-    for (const label of decision.remove) removeLabel(decision.issue, label);
+    for (const label of decision.add) await addLabel(decision.issue, label);
+    for (const label of decision.remove) await removeLabel(decision.issue, label);
     if (decision.note)
-      gh([
+      await gh([
         "issue",
         "comment",
         "--repo",

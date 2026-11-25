@@ -28,6 +28,7 @@
     <string>__HOME__/.local/share/komotion-locks</string>
     <key>SANDCASTLE_MOBAI</key>
     <string>false</string>
+  __HEAVY_ENV__
   </dict>
   __WATCHPATHS__
   __INTERVAL__

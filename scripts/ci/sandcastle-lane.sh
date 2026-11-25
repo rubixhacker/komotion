@@ -3,8 +3,13 @@
 #
 # launchd has no systemd's ExecStartPre, Restart=on-failure or
 # SuccessExitStatus. This wrapper supplies all three for every lane:
-# it verifies the checkout, runs the lane, treats the factory's "another run
-# is active" (75) and operator stop (143) as clean, and alerts on a real fault.
+# it caps the open logs, consumes the exact event snapshot before preflight
+# and locking, verifies the checkout, runs the lane, treats 75 and 143 as
+# clean, and alerts on a real fault without changing its exit status.
+#
+# A marker that arrives after the snapshot is never acknowledged by this
+# pass. A wrapper that hits the lock requeues its snapshot so the marker
+# survives until a pass can actually consume it.
 #
 # Usage: sandcastle-lane.sh <lane>
 # The allowed lanes and their entry points come from
@@ -33,14 +38,75 @@ PY
 [ -n "$entry" ] || { echo "sandcastle-lane: unknown lane ${lane:-<none>}" >&2; exit 2; }
 
 cd "$root" || exit 1
-bash scripts/ci/sandcastle-runtime.sh || exit 1
+
+logs="$root/.sandcastle/logs"
+mkdir -p "$logs"
+pending="$logs/$lane.pending.$$.json"
+events_dir="$logs/$lane-events"
+events_tool="$root/.sandcastle/events-cli.mts"
+logs_tool="$root/.sandcastle/logs.mts"
+alert="$root/scripts/sandcastle-alert.sh"
+
+cap_logs() {
+  if [[ -f "$logs_tool" ]]; then
+    node --experimental-strip-types "$logs_tool" cap --root "$root" --lane "$lane" >/dev/null 2>&1 || true
+  fi
+}
+requeue_events() {
+  if [[ -f "$pending" && -f "$events_tool" ]]; then
+    node --experimental-strip-types "$events_tool" requeue --directory "$events_dir" --snapshot "$pending" >/dev/null 2>&1 || true
+  fi
+}
+report_fault() {
+  local status=$1
+  local detail=$2
+  if (( status != 0 )) && [[ -f "$alert" ]]; then
+    bash "$alert" --unit "sandcastle-$lane" "$detail" >/dev/null 2>&1 || true
+  fi
+}
+
+cap_logs
+trap 'cap_logs; rm -f "$pending"' EXIT
+
+# Consume before preflight and locking: the marker that woke this wrapper is
+# serviced by this invocation even when preflight changes the checkout.
+if [[ -f "$events_tool" ]]; then
+  node --experimental-strip-types "$events_tool" expire --directory "$events_dir" >/dev/null 2>&1 || true
+  node --experimental-strip-types "$events_tool" snapshot --directory "$events_dir" --snapshot "$pending"
+  status=$?
+  if (( status != 0 )); then
+    report_fault "$status" "event snapshot failed with status $status"
+    exit "$status"
+  fi
+  node --experimental-strip-types "$events_tool" ack --directory "$events_dir" --snapshot "$pending" >/dev/null
+  status=$?
+  if (( status != 0 )); then
+    requeue_events
+    report_fault "$status" "event acknowledgement failed with status $status"
+    exit "$status"
+  fi
+fi
+
+bash scripts/ci/sandcastle-runtime.sh
+status=$?
+if (( status != 0 )); then
+  # No pass ran, so its wake-up event must remain pending.
+  requeue_events
+  report_fault "$status" "runtime preflight exited $status"
+  exit "$status"
+fi
 
 node .sandcastle/node_modules/tsx/dist/cli.mjs ".sandcastle/$entry.mts"
 status=$?
 case "$status" in
-  0|75|143) exit 0 ;;
+  0|143) exit 0 ;;
+  75)
+    # Another pass holds the lock. Preserve the trigger for that pass's end.
+    requeue_events
+    exit 0
+    ;;
   *)
-    bash scripts/sandcastle-alert.sh --unit "sandcastle-$lane" "lane exited $status" || true
-    exit 1
+    report_fault "$status" "lane exited $status"
+    exit "$status"
     ;;
 esac
