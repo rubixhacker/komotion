@@ -1,13 +1,15 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "Node16",
-    "moduleResolution": "Node16",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
-  "include": ["*.mts", "launchd/**/*"]
+  "include": ["*.mts", "agent/cli/*.mts", "macos/*.mts"]
 }

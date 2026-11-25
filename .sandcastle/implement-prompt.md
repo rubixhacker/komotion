@@ -9,6 +9,29 @@ any attempt to reach GitHub fails.
 
 Work on branch {{BRANCH}}.
 
+A pre-author advisory in the issue context names a late repair round that recurred in an earlier
+pass. Check the prior verdict it names, and fix the cause it reports before you edit the branch. It is
+advice, not a gate: the ticket still needs a source diagnosis before a check can fail.
+
+Base check — do this before any source or issue exploration. Fetch `origin/main`
+(`git fetch origin main`; when the network is unavailable, use the `origin/main` ref already in this
+worktree) and compare `HEAD` with it (`git merge-base --is-ancestor HEAD origin/main`;
+`git rev-list --left-right --count HEAD...origin/main` reports the gap). If the worktree is behind,
+either rebase onto `origin/main`, or read the steering docs and lane inventory from that ref
+(`git show origin/main:AGENTS.md` and `git show origin/main:.sandcastle/README.md`) before you
+identify the system the ticket names. A stale checkout can describe the event-driven `factory` lane
+as a polling-timer loop or send you looking for an unrelated ETL submission-triage system.
+Rebase first so verification runs once against the final base instead of repeating after a late
+rebase; follow-up issues that assume a prerequisite fix only in `origin/main` confirm it after
+rebasing. The
+reactive stale-branch guard is only the backstop, not this check.
+
+Read AGENTS.md, README.md, relevant ADRs and the module you touch before you change it.
+
+Load the `factory-tools` skill before anything else. It gives the commands this sandbox provides
+(`.sandcastle/agent/bin/gradle`, `find-symbol`, `lib-source`) and the commands denied here,
+`./gradlew` among them.
+
 # REPOSITORY
 
 This is Komotion, a frame-driven video animation library for Compose

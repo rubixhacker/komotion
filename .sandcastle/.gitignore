@@ -2,3 +2,14 @@
 logs/
 worktrees/
 node_modules/
+# Payloads the host writes for agents to read. They are copied into worktrees,
+# so the checkout guard must not see them as uncommitted work.
+planner-context.json
+planner-state.json
+issue-context-*.json
+repair-failure-*.txt
+repair-message-*.txt
+ci-repair-context-*.txt
+ci-repair-started-*.txt
+review-failure-*.txt
+review.diff

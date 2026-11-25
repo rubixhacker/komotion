@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.rubixhacker.sandcastle.review-server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>set -a; source __HOME__/.config/komotion-review-server/production.env; set +a; exec ./gradlew :etl:reviewServer</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__HOME__/Workspace/komotion-factory</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>JAVA_HOME</key>
+    <string>__JAVA_HOME__</string>
+    <key>TZ</key>
+    <string>UTC</string>
+  </dict>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Workspace/komotion-factory/.sandcastle/logs/launchd-review-server.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Workspace/komotion-factory/.sandcastle/logs/launchd-review-server.err.log</string>
+</dict>
+</plist>

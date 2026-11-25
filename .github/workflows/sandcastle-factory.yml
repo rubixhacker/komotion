@@ -1,15 +1,19 @@
 name: Sandcastle Factory Dispatch
 
-# Wakes the local issue factory when GitHub state it reads changes, so it does
-# not wait for its next poll. The job only drops a marker file on the factory
-# host; the factory then reads current state itself, so no event payload is
-# trusted. The factory's timer and its in-pass sweep remain the fallback.
+# Wakes the local issue factory when GitHub state it reads changes: the lane
+# has no polling timer and wakes only from events. The enqueue job drops a
+# marker file; the factory then reads current state itself, so no event payload
+# is trusted. A green check arms auto-merge directly, and a failed check or a
+# push to main runs the standalone ci-repair script, in seconds rather than at
+# the next pass.
 on:
   issues:
     types: [labeled]
   pull_request_target:
     branches: [main]
     types: [closed]
+  push:
+    branches: [main]
   workflow_run:
     workflows:
       - CI
@@ -34,3 +38,45 @@ jobs:
       - name: Queue an event for the local issue factory
         shell: bash
         run: bash "${SANDCASTLE_RUNTIME_DIR:-$HOME/Workspace/komotion-factory}/scripts/ci/sandcastle-enqueue.sh" factory
+
+  arm-merge:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'sandcastle/issue-') &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: [self-hosted, sandcastle-dispatch]
+    timeout-minutes: 5
+    steps:
+      - name: Arm squash auto-merge for the green factory pull request
+        shell: bash
+        env:
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          runtime=${SANDCASTLE_RUNTIME_DIR:-$HOME/Workspace/komotion-factory}
+          cd "$runtime/.sandcastle"
+          pr=$(gh pr list --repo rubixhacker/komotion --head "$BRANCH" --base main --state open --json number --jq '.[0].number')
+          if [ -z "$pr" ] || [ "$pr" = "null" ]; then
+            echo "No open factory pull request for $BRANCH; nothing to arm."
+            exit 0
+          fi
+          npm run --silent arm-merge -- "$pr"
+
+  ci-repair:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'failure' &&
+       startsWith(github.event.workflow_run.head_branch, 'sandcastle/issue-')) ||
+      github.event_name == 'push'
+    runs-on: [self-hosted, sandcastle-dispatch]
+    timeout-minutes: 30
+    steps:
+      - name: Repair the failing or conflicting factory pull request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        shell: bash
+        run: >-
+          bash "${SANDCASTLE_RUNTIME_DIR:-$HOME/Workspace/komotion-factory}/scripts/ci/sandcastle-ci-repair.sh"
+          "$EVENT_NAME" "$HEAD_BRANCH"

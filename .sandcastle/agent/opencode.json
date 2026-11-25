@@ -5,11 +5,13 @@
     "websearch": "deny",
     "bash": {
       "*": "allow",
+      "*gradlew*": "deny",
+      "*cloud-gradle.sh*": "deny",
       "gh *": "deny",
-      "*git push*": "deny",
       "*git stash*": "deny",
       "*git reset --hard*": "deny",
       "*git clean *": "deny",
+      "*git push*": "deny",
       "*--no-verify*": "deny",
       "*pkill *": "deny",
       "*killall *": "deny"

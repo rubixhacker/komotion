@@ -13,13 +13,21 @@
 import * as sandcastle from "@ai-hero/sandcastle";
 import { z } from "zod";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { acquireLock } from "./lock.mts";
+import { readFileSync, rmSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { enterFactoryLock, factoryLockPath } from "./lock.mjs";
 import { ghCommandFailures, promptArgFailures } from "./check.mts";
 import { factorySandbox } from "./macos.mts";
+import {
+  createPiAgentDir,
+  factoryAgent,
+  FACTORY_AGENTS,
+  DEFAULT_FACTORY_AGENT,
+} from "./agent-provider.mjs";
+import { acknowledgeEvents, pendingEvents } from "./events.mjs";
 
-const root = resolve(process.cwd());
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 try {
   process.loadEnvFile(resolve(root, ".sandcastle/.env"));
 } catch (error) {
@@ -30,8 +38,9 @@ try {
 const config = z
   .object({
     GITHUB_REPO: z.string().default("rubixhacker/komotion"),
-    // The agent model.
+    // The agent model and CLI. Pi is the default; OpenCode is the control route.
     SANDCASTLE_MODEL: z.string().default("vllm/Qwen3.8"),
+    SANDCASTLE_AGENT: z.enum(FACTORY_AGENTS).default(DEFAULT_FACTORY_AGENT),
     VLLM_BASE_URL: z.url().default("http://192.168.1.3:18982/v1"),
     // How many issues one triage pass may look at.
     TRIAGE_BATCH: z.coerce.number().int().min(1).max(50).default(20),
@@ -151,11 +160,12 @@ if (process.argv.includes("--check")) {
   process.exit(0);
 }
 
-const release = acquireLock(root, "triage");
-if (release === null) {
-  console.log("triage: another pass is running; not starting a new one");
-  process.exit(75);
-}
+enterFactoryLock(factoryLockPath("triage.lock"), fileURLToPath(import.meta.url));
+
+// The lane is woken by an event marker; this pass reads all open issues, so
+// the marker has served its purpose and must not wake a second pass.
+const triageEvents = resolve(root, ".sandcastle/logs/triage-events");
+acknowledgeEvents(triageEvents, pendingEvents(triageEvents));
 
 async function main(): Promise<void> {
   const issues = fetchOpenIssues();
@@ -165,16 +175,27 @@ async function main(): Promise<void> {
     return;
   }
 
+  const piAgentDir =
+    config.SANDCASTLE_AGENT === "pi"
+      ? createPiAgentDir({
+          root,
+          models: [config.SANDCASTLE_MODEL],
+          vllmBaseUrl: config.VLLM_BASE_URL,
+          keyPath: resolve(process.env.HOME ?? "", ".config/sandcastle/opencode-go.key"),
+        })
+      : null;
   const result = await sandcastle.run({
-    sandbox: factorySandbox(),
+    sandbox: factorySandbox(
+      piAgentDir === null
+        ? []
+        : [{ hostPath: piAgentDir, sandboxPath: piAgentDir, readonly: false }],
+    ),
     name: "triage",
     maxIterations: 1,
-    agent: sandcastle.opencode(config.SANDCASTLE_MODEL, {
-      captureSessions: false,
-      env: {
-        OPENCODE_CONFIG_CONTENT: readFileSync(resolve(root, ".sandcastle/opencode.json"), "utf8"),
-        VLLM_BASE_URL: config.VLLM_BASE_URL,
-      },
+    agent: factoryAgent(config.SANDCASTLE_MODEL, config.SANDCASTLE_AGENT, {
+      OPENCODE_CONFIG_CONTENT: readFileSync(resolve(root, ".sandcastle/opencode.json"), "utf8"),
+      VLLM_BASE_URL: config.VLLM_BASE_URL,
+      ...(piAgentDir === null ? {} : { PI_CODING_AGENT_DIR: piAgentDir }),
     }),
     promptFile: "./.sandcastle/triage-prompt.md",
     promptArgs: triagePromptArgs(issues),
@@ -201,6 +222,7 @@ async function main(): Promise<void> {
       `  #${decision.issue}: +[${decision.add.join(", ")}] -[${decision.remove.join(", ")}]`,
     );
   }
+  if (piAgentDir !== null) rmSync(piAgentDir, { recursive: true, force: true });
 }
 
 main()
@@ -210,7 +232,4 @@ main()
   .catch((error) => {
     console.error(`triage: pass failed: ${String(error)}`);
     process.exitCode = 1;
-  })
-  .finally(() => {
-    release();
   });

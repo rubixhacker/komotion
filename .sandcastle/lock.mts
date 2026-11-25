@@ -1,59 +1,60 @@
-import {
-  closeSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HELD_FLAG = "--sandcastle-lock-held";
 
 /**
- * A PID-file lease: the holder writes its pid on exclusive create. A lock
- * whose holder is gone (the process died without releasing) is stale and is
- * taken over. Returns a release function, or null when another live process
- * holds the lock.
- *
- * The lock file lives under .sandcastle/logs/, which is gitignored, so a
- * stale lock never dirties the checkout the runtime check requires.
+ * One lock directory for the machine, not one per checkout. Otherwise a second
+ * checkout of the same repo starts a second factory and the two never see
+ * each other's lease.
  */
-export function acquireLock(root: string, name: string): (() => void) | null {
-  const file = resolve(root, ".sandcastle/logs", `${name}.lock`);
-  mkdirSync(dirname(file), { recursive: true });
-  let fd: number;
-  try {
-    fd = openSync(file, "wx");
-  } catch {
-    let holder = 0;
-    try {
-      holder = Number.parseInt(readFileSync(file, "utf8").trim(), 10);
-    } catch {
-      return null;
-    }
-    if (holder > 0 && isAlive(holder)) return null;
-    try {
-      fd = openSync(file, "w");
-    } catch {
-      return null;
-    }
-  }
-  writeFileSync(fd, String(process.pid));
-  closeSync(fd);
-  return () => {
-    try {
-      if (Number.parseInt(readFileSync(file, "utf8").trim(), 10) === process.pid)
-        rmSync(file);
-    } catch {
-      // the lock is gone or held by someone else; nothing to release
-    }
-  };
+export function factoryLockPath(name: string): string {
+  const dir =
+    process.env.SANDCASTLE_LOCK_DIR ??
+    resolve(process.env.HOME ?? "", ".local/share/komotion-locks");
+  mkdirSync(dir, { recursive: true });
+  return resolve(dir, name);
 }
 
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+export interface FactoryLockOptions {
+  /**
+   * Wait for a running pass instead of exiting 75. A phone "run a research pass now" request made
+   * during a pass must run after it, not be dropped.
+   */
+  wait?: boolean;
+}
+
+export function enterFactoryLock(
+  lockPath: string,
+  script: string,
+  options: FactoryLockOptions = {},
+) {
+  if (process.argv.includes(HELD_FLAG)) return;
+  // The portable lease holder runs the child, keeps the lease for its lifetime
+  // and exits 75 on contention when the caller asked not to wait.
+  const childArguments = [
+    process.execPath,
+    ...process.execArgv,
+    script,
+    ...process.argv.slice(2),
+    HELD_FLAG,
+  ];
+  const result = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(new URL("./macos/lock-holder.mjs", import.meta.url)),
+      lockPath,
+      options.wait === true ? "1" : "0",
+      ...childArguments,
+    ],
+    { stdio: "inherit" },
+  );
+  if (result.error) throw result.error;
+  if (result.status === 75)
+    console.error(
+      "Another Sandcastle factory run is already active. Wait for it to finish before starting another.",
+    );
+  process.exit(result.status ?? (result.signal === "SIGINT" ? 130 : 1));
 }

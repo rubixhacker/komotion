@@ -111,6 +111,6 @@ export function macEnv(env: Readonly<Record<string, string>>): Record<string, st
  * The factory's provider factory: sandcastle's Seatbelt provider with
  * identity mounts and the host toolchain.
  */
-export function factorySandbox() {
-  return seatbelt({ env: macEnv({}), mounts: macMounts() });
+export function factorySandbox(extraMounts: MountConfig[] = []) {
+  return seatbelt({ env: macEnv({}), mounts: [...macMounts(), ...extraMounts] });
 }
